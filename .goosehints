@@ -1,0 +1,5 @@
+Goose, you're in a rust app called ola. 
+
+It's a CLI tool that trys to optimize calls to reasoning models using the format [Goals, Return Format, Warnings]
+
+It should be able to be configured to different providers, run sessions, and store output in jsonl files

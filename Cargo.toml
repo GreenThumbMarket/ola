@@ -1,0 +1,29 @@
+[package]
+name = "ola"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Clap for parsing CLI arguments
+clap = { version = "4.1", features = ["derive"] }
+
+# Dialoguer for user-friendly prompts
+dialoguer = "0.10"
+
+# Serde for serialization/deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Reqwest for HTTP requests
+reqwest = { version = "0.11", features = ["json"] }
+
+# Tokio for async runtime (required for reqwest)
+tokio = { version = "1", features = ["full"] }
+
+# Anyhow for error handling
+anyhow = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.9"
+chrono = "0.4.39"
