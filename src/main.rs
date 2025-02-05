@@ -69,7 +69,21 @@ fn main() {
             } else {
                 println!("No additional details provided.");
             }
-            // Here you could store configuration details in a file or environment as needed
+            // Save configuration to ~/.ola/config.json
+            let home = std::env::var("HOME").expect("Could not determine HOME directory");
+            let config_dir = format!("{}/.ola", home);
+            std::fs::create_dir_all(&config_dir).unwrap_or_else(|e| {
+                eprintln!("Failed to create config directory {}: {}", config_dir, e);
+            });
+            let config_path = format!("{}/config.json", config_dir);
+            let config_json = serde_json::json!({
+                "provider": provider,
+                "details": details,
+            });
+            match std::fs::write(&config_path, config_json.to_string()) {
+                Ok(_) => println!("Configuration saved to {}", config_path),
+                Err(e) => eprintln!("Failed to write configuration file: {}", e),
+            }
         }
         Some(Commands::Session { goals, return_format, warnings }) => {
             println!("Running session with the following parameters:");
