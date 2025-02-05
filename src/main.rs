@@ -126,16 +126,19 @@ fn run_prompt() {
         .interact_text()
         .unwrap();
 
-    // Ask user for their return format
-    let return_format: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Return Format: ")
-        .default("Anonymous".into())
-        .interact_text()
+    // Ask user for their requested format
+    let return_format_options = vec!["text", "json", "markdown"];
+    let selected_index = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Requested Format")
+        .items(&return_format_options)
+        .default(0)
+        .interact()
         .unwrap();
+    let return_format = return_format_options[selected_index].to_string();
 
     // Ask user for their warnings
     let warnings: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Goals: ")
+        .with_prompt("Warnings: ")
         .default("Anonymous".into())
         .interact_text()
         .unwrap();
@@ -143,18 +146,11 @@ fn run_prompt() {
     // Call the prompt function from the ola crate
     let output = prompt::structure_reasoning(&goals, &return_format, &warnings);
 
-    // Ask user to select from some choices
-    let options = vec!["Option A", "Option B", "Option C"];
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Choose an option")
-        .items(&options)
-        .default(0)
-        .interact()
-        .unwrap();
-
-    println!("Selected: {}", options[selection]);
     println!("Goals: {}\nReturn Format: {}\nWarnings: {}", goals, return_format, warnings);
-    println!("Prompt output: {}", output);
+    match output {
+        Ok(()) => println!("Prompt executed successfully"),
+        Err(e) => println!("Prompt returned error: {:?}", e),
+    }
 }
 
 fn append_to_log(filename: &str, entry: &str) -> std::io::Result<()> {
