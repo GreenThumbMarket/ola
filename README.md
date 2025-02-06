@@ -4,7 +4,7 @@
 A Rust based CLI for effectively prompting reasoning models.
 
 ## Install
-cargo install --path .
+`cargo install --path .`
 
 ## Dependencies
 ollama + reasoning model
