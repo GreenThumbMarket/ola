@@ -1,4 +1,4 @@
-#Ola
+# Ola
 
 ## Background
 A Rust based CLI for effectively prompting reasoning models.
