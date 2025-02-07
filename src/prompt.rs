@@ -15,7 +15,7 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
     // Prepare the JSON payload
     let payload = json!({
         "prompt": input_data,
-        "model": "deepseek-r1:1.5b"
+        "model": "deepseek-r1:14b"
     });
 
     // Send a POST request to the Ollama completions endpoint.
