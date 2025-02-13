@@ -1,40 +1,66 @@
-use std::io::{Write, Result as IoResult};
+use std::io::Write;
+use std::time::Duration;
 use serde_json::json;
 use std::process::{Command, Stdio};
 
-// This version sends a POST request, parses the JSON response to extract only choices[0].text,
-// and copies that text to the clipboard using pbcopy.
-
 pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("In Here");
     let input_data = format!("Goals: {}\nReturn Type: {}\nWarnings: {}", goals, return_type, warnings);
 
-    // Create a blocking client
-    let client = reqwest::blocking::Client::new();
+    // Create a blocking client with timeout configuration
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(120))  // 2 minute timeout
+        .build()?;
 
-    // Prepare the JSON payload
+    // Prepare the JSON payload for Ollama API
     let payload = json!({
+        "model": "deepseek-r1:14b",
         "prompt": input_data,
-        "model": "deepseek-r1:14b"
+        "stream": false,  // Get complete response rather than stream
+        "options": {
+            "num_predict": 2048,  // Limit token output
+        }
     });
 
-    // Send a POST request to the Ollama completions endpoint.
-    // Note: Using port 11434 as per the curl script in ../olaPipe/olapipe.sh
-    let response_text = client
-        .post("http://localhost:11434/v1/completions")
+    println!("Sending request to Ollama...");
+    
+    // Send a POST request to the Ollama API endpoint
+    let response = match client
+        .post("http://localhost:11434/api/generate")
         .json(&payload)
-        .send()?
-        .text()?;
+        .send() {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("Failed to send request to Ollama: {}", e);
+                if e.is_timeout() {
+                    eprintln!("Request timed out after 120 seconds");
+                }
+                return Err(e.into());
+            }
+        };
+
+    // Check if response is successful
+    if !response.status().is_success() {
+        eprintln!("Ollama returned error status: {}", response.status());
+        return Err(format!("Ollama API error: {}", response.status()).into());
+    }
+
+    // Get response as text
+    let response_text = response.text()?;
 
     // Parse the JSON response
-    let json_response: serde_json::Value = serde_json::from_str(&response_text)?;
+    let json_response: serde_json::Value = match serde_json::from_str(&response_text) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Failed to parse JSON response: {}", e);
+            eprintln!("Raw response: {}", response_text);
+            return Err(e.into());
+        }
+    };
 
-    // Extract only choices[0].text
-    let text_output = json_response.get("choices")
-        .and_then(|choices| choices.get(0))
-        .and_then(|choice| choice.get("text"))
-        .and_then(|t| t.as_str())
-        .ok_or("Missing choices[0].text in the response JSON")?;
+    // Extract the response text
+    let text_output = json_response["response"]
+        .as_str()
+        .ok_or("Missing response text in the JSON response")?;
 
     // Copy the text to the clipboard using pbcopy
     let mut pbcopy = Command::new("pbcopy")
@@ -47,5 +73,6 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
     }
     pbcopy.wait()?;
 
+    println!("Successfully processed response and copied to clipboard");
     Ok(())
 }
