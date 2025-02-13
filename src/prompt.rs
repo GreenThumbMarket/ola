@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Write, BufRead};
 use std::time::Duration;
 use serde_json::json;
 use std::process::{Command, Stdio};
@@ -15,7 +15,7 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
     let payload = json!({
         "model": "deepseek-r1:14b",
         "prompt": input_data,
-        "stream": false,  // Get complete response rather than stream
+        "stream": true,  // Enable streaming
         "options": {
             "num_predict": 2048,  // Limit token output
         }
@@ -44,32 +44,44 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
         return Err(format!("Ollama API error: {}", response.status()).into());
     }
 
-    // Get response as text
-    let response_text = response.text()?;
+    let mut full_response = String::new();
 
-    // Parse the JSON response
-    let json_response: serde_json::Value = match serde_json::from_str(&response_text) {
-        Ok(json) => json,
-        Err(e) => {
-            eprintln!("Failed to parse JSON response: {}", e);
-            eprintln!("Raw response: {}", response_text);
-            return Err(e.into());
+    // Process the stream line by line
+    let reader = std::io::BufReader::new(response);
+    for line in reader.lines() {
+        let line = line?;
+        if line.is_empty() {
+            continue;
         }
-    };
 
-    // Extract the response text
-    let text_output = json_response["response"]
-        .as_str()
-        .ok_or("Missing response text in the JSON response")?;
+        // Parse each line as JSON
+        let json_response: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("Failed to parse JSON response: {}", e);
+                eprintln!("Raw line: {}", line);
+                continue;
+            }
+        };
 
-    // Copy the text to the clipboard using pbcopy
+        // Extract and print the response text
+        if let Some(text) = json_response["response"].as_str() {
+            print!("{}", text);
+            std::io::stdout().flush()?;
+            full_response.push_str(text);
+        }
+    }
+
+    println!("\n"); // Add a newline at the end
+
+    // Copy the complete response to the clipboard using pbcopy
     let mut pbcopy = Command::new("pbcopy")
         .stdin(Stdio::piped())
         .spawn()
         .expect("Failed to start pbcopy");
     {
         let stdin = pbcopy.stdin.as_mut().expect("Failed to open pbcopy stdin");
-        stdin.write_all(text_output.as_bytes())?;
+        stdin.write_all(full_response.as_bytes())?;
     }
     pbcopy.wait()?;
 
