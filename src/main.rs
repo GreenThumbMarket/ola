@@ -121,7 +121,7 @@ fn run_prompt() {
     
     // Ask user for their goals
     let goals: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Goals: ")
+        .with_prompt("🏆 Goals: ")
         .default("Anonymous".into())
         .interact_text()
         .unwrap();
@@ -129,7 +129,7 @@ fn run_prompt() {
     // Ask user for their requested format
     let return_format_options = vec!["text", "json", "markdown"];
     let selected_index = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Requested Format")
+        .with_prompt("📝 Requested Format")
         .items(&return_format_options)
         .default(0)
         .interact()
@@ -138,7 +138,7 @@ fn run_prompt() {
 
     // Ask user for their warnings
     let warnings: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Warnings: ")
+        .with_prompt("⚠️ Warnings: ")
         .default("Anonymous".into())
         .interact_text()
         .unwrap();
