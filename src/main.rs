@@ -1,3 +1,10 @@
+/* 
+.olaHints content:
+- This file contains hints for optimizing model calls.
+- Use the format [Goals, Return Format, Warnings] when configuring sessions.
+- Providers and session storage are easily configurable.
+*/
+
 use clap::{Parser, Subcommand};
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use std::fs::OpenOptions;
@@ -125,7 +132,7 @@ fn run_prompt() {
         .default("Anonymous".into())
         .interact_text()
         .unwrap();
-
+    
     // Ask user for their requested format
     let return_format_options = vec!["text", "json", "markdown"];
     let selected_index = Select::with_theme(&ColorfulTheme::default())
@@ -135,17 +142,17 @@ fn run_prompt() {
         .interact()
         .unwrap();
     let return_format = return_format_options[selected_index].to_string();
-
+    
     // Ask user for their warnings
     let warnings: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("⚠️ Warnings: ")
         .default("Anonymous".into())
         .interact_text()
         .unwrap();
-
+    
     // Call the prompt function from the ola crate
     let output = prompt::structure_reasoning(&goals, &return_format, &warnings);
-
+    
     println!("Goals: {}\nReturn Format: {}\nWarnings: {}", goals, return_format, warnings);
     match output {
         Ok(()) => println!("Prompt executed successfully"),

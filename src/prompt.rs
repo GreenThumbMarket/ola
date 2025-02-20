@@ -2,9 +2,32 @@ use std::io::{Write, BufRead};
 use std::time::Duration;
 use serde_json::json;
 use std::process::{Command, Stdio};
+use std::fs;
+use std::path::Path;
 
 pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let input_data = format!("Goals: {}\nReturn Type: {}\nWarnings: {}", goals, return_type, warnings);
+    // Build the base input data
+    let mut input_data = format!("Goals: {}\nReturn Type: {}\nWarnings: {}", goals, return_type, warnings);
+
+    // Try to read hints from a local .olaHints file; if not found, fallback to global hints
+    let mut hints = String::new();
+    // Check local file .olaHints in the current directory
+    if Path::new("./.olaHints").exists() {
+        hints = fs::read_to_string("./.olaHints")?;
+    } else {
+        // Fallback to global hints in ~/.ola-hints/olaHints
+        if let Ok(home) = std::env::var("HOME") {
+            let global_path = format!("{}/.ola-hints/olaHints", home);
+            if Path::new(&global_path).exists() {
+                hints = fs::read_to_string(global_path)?;
+            }
+        }
+    }
+
+    // If hints were found, append them to the input data
+    if !hints.is_empty() {
+        input_data.push_str(&format!("\nHINTS: {}", hints));
+    }
 
     // Create a blocking client with timeout configuration
     let client = reqwest::blocking::Client::builder()
@@ -17,7 +40,7 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
         "prompt": input_data,
         "stream": true,  // Enable streaming
         "options": {
-            "num_predict": 2048,  // Limit token output
+            "num_predict": 2048  // Limit token output
         }
     });
 
