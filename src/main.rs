@@ -13,6 +13,7 @@ use chrono::Utc;
 use serde_json::json;
 
 mod prompt;
+mod config;
 
 #[derive(Parser)]
 #[command(name = "ola")]
@@ -34,12 +35,17 @@ enum Commands {
     },
     
     Prompt, /// Demonstrates a friendly user prompt via dialoguer
-    Configure { /// Configure the provider for reasoning models
+    /// Configure LLM provider settings
+    Configure {
+        /// Optional: directly specify provider (skips interactive mode)
         #[arg(short, long)]
-        provider: String, /// e.g., openai, anthropic
-        /// Optional configuration details
+        provider: Option<String>,
+        /// Optional: set API key (skips interactive prompt)
         #[arg(short, long)]
-        details: Option<String>,
+        api_key: Option<String>,
+        /// Optional: specify model name
+        #[arg(short, long)]
+        model: Option<String>,
     },
     /// Run a session with specified goals, return format, and warnings.
     Session {
@@ -69,27 +75,50 @@ fn main() {
         Some(Commands::Prompt) => {
             run_prompt();
         }
-        Some(Commands::Configure { provider, details }) => {
-            println!("Configuring provider: {}", provider);
-            if let Some(info) = details {
-                println!("Additional details: {}", info);
-            } else {
-                println!("No additional details provided.");
+        Some(Commands::Configure { provider, api_key, model }) => {
+            // If no arguments provided, run interactive configuration
+            if provider.is_none() && api_key.is_none() && model.is_none() {
+                if let Err(e) = config::run_interactive_config() {
+                    eprintln!("Configuration failed: {}", e);
+                    std::process::exit(1);
+                }
+                return;
             }
-            // Save configuration to ~/.ola/config.json
-            let home = std::env::var("HOME").expect("Could not determine HOME directory");
-            let config_dir = format!("{}/.ola", home);
-            std::fs::create_dir_all(&config_dir).unwrap_or_else(|e| {
-                eprintln!("Failed to create config directory {}: {}", config_dir, e);
+
+            // Handle non-interactive configuration
+            let mut config = config::Config::load().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
             });
-            let config_path = format!("{}/config.json", config_dir);
-            let config_json = serde_json::json!({
-                "provider": provider,
-                "details": details,
-            });
-            match std::fs::write(&config_path, config_json.to_string()) {
-                Ok(_) => println!("Configuration saved to {}", config_path),
-                Err(e) => eprintln!("Failed to write configuration file: {}", e),
+
+            let provider_config = config::ProviderConfig {
+                provider: provider.clone().unwrap_or_else(|| {
+                    eprintln!("Provider must be specified in non-interactive mode");
+                    std::process::exit(1);
+                }),
+                api_key: api_key.clone().unwrap_or_else(|| {
+                    eprintln!("API key must be specified in non-interactive mode");
+                    std::process::exit(1);
+                }),
+                model: model.clone(),
+                additional_settings: None,
+            };
+
+            // Validate the configuration
+            if let Err(e) = config::validate_provider_config(&provider_config) {
+                eprintln!("Invalid configuration: {}", e);
+                std::process::exit(1);
+            }
+
+            config.add_provider(provider_config.clone());
+            if let Err(e) = config.save() {
+                eprintln!("Failed to save configuration: {}", e);
+                std::process::exit(1);
+            }
+
+            println!("✅ Configuration saved for provider: {}", provider_config.provider);
+            if let Some(model) = provider_config.model {
+                println!("Using model: {}", model);
             }
         }
         Some(Commands::Session { goals, return_format, warnings }) => {

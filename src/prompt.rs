@@ -34,9 +34,20 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
         .timeout(Duration::from_secs(120))  // 2 minute timeout
         .build()?;
 
+    // Load current configuration
+    let config = crate::config::Config::load()?;
+    let provider_config = config.get_active_provider()
+        .ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No active provider configured. Run 'ola configure' first."
+        ))?;
+
+    // Use model from config or fallback to default
+    let model = provider_config.model.as_deref().unwrap_or("deepseek-r1:14b");
+
     // Prepare the JSON payload for Ollama API
     let payload = json!({
-        "model": "deepseek-r1:14b",
+        "model": model,
         "prompt": input_data,
         "stream": true,  // Enable streaming
         "options": {
