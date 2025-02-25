@@ -1,17 +1,18 @@
-/* 
+/*
 .olaHints content:
 - This file contains hints for optimizing model calls.
 - Use the format [Goals, Return Format, Warnings] when configuring sessions.
 - Providers and session storage are easily configurable.
 */
 
+use chrono::Utc;
 use clap::{Parser, Subcommand};
 use dialoguer::{theme::ColorfulTheme, Input, Select};
+use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write;
-use chrono::Utc;
-use serde_json::json;
 
+mod config;
 mod prompt;
 
 #[derive(Parser)]
@@ -32,19 +33,39 @@ enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
-    
-    Prompt, /// Demonstrates a friendly user prompt via dialoguer
-    Configure { /// Configure the provider for reasoning models
+
+    /// Prompt command with optional flags for goals, format, and warnings
+    Prompt {
+        /// Optional: specify goals
         #[arg(short, long)]
-        provider: String, /// e.g., openai, anthropic
-        /// Optional configuration details
+        goals: Option<String>,
+        /// Optional: specify format (defaults to "text")
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+        /// Optional: specify warnings (defaults to empty string)
+        #[arg(short, long, default_value = "")]
+        warnings: String,
+        /// Optional: copy output to clipboard (defaults to false)
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+    },
+    /// Demonstrates a friendly user prompt via dialoguer
+    /// Configure LLM provider settings
+    Configure {
+        /// Optional: directly specify provider (skips interactive mode)
         #[arg(short, long)]
-        details: Option<String>,
+        provider: Option<String>,
+        /// Optional: set API key (skips interactive prompt)
+        #[arg(short, long)]
+        api_key: Option<String>,
+        /// Optional: specify model name
+        #[arg(short, long)]
+        model: Option<String>,
     },
     /// Run a session with specified goals, return format, and warnings.
     Session {
         /// Goals for the reasoning call
-        #[arg(short, long, default_value="")]
+        #[arg(short, long, default_value = "")]
         goals: String,
         /// Expected return format
         #[arg(short = 'f', long)]
@@ -66,33 +87,166 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt) => {
-            run_prompt();
+        Some(Commands::Prompt { goals, format, warnings, clipboard }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard);
         }
-        Some(Commands::Configure { provider, details }) => {
-            println!("Configuring provider: {}", provider);
-            if let Some(info) = details {
-                println!("Additional details: {}", info);
+        Some(Commands::Configure {
+            provider: cli_provider,
+            api_key: cli_api_key,
+            model: cli_model,
+        }) => {
+            // Interactive configuration mode
+            println!("🤖 Welcome to Ola Interactive Configuration!");
+
+            // Provider selection - use command line arg if provided, otherwise ask
+            let provider_name = if let Some(p) = cli_provider.clone() {
+                p
             } else {
-                println!("No additional details provided.");
+                let providers = vec!["OpenAI", "Anthropic", "Ollama"];
+                let selected_idx = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Provider")
+                    .items(&providers)
+                    .default(0)
+                    .interact()
+                    .unwrap();
+                providers[selected_idx].to_string()
+            };
+
+            // API Key handling based on provider and CLI args
+            let api_key = if let Some(key) = cli_api_key.clone() {
+                key
+            } else {
+                match provider_name.as_str() {
+                    "Ollama" => {
+                        println!("No API key needed for Ollama (using local instance)");
+                        String::new()
+                    }
+                    _ => {
+                        // Use Password input for secure API key entry
+                        dialoguer::Password::with_theme(&ColorfulTheme::default())
+                            .with_prompt(format!("{} API Key", provider_name))
+                            .interact()
+                            .unwrap()
+                    }
+                }
+            };
+
+            // Model selection - use CLI arg if provided
+            let model = if let Some(m) = cli_model.clone() {
+                Some(m)
+            } else {
+                match provider_name.as_str() {
+                    "OpenAI" => {
+                        let models = vec!["gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"];
+                        let idx = Select::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Model")
+                            .items(&models)
+                            .default(0)
+                            .interact()
+                            .unwrap();
+                        Some(models[idx].to_string())
+                    }
+                    "Anthropic" => {
+                        let models = vec![
+                            "claude-3-opus-20240229",
+                            "claude-3-sonnet-20240229",
+                            "claude-3-haiku-20240307",
+                            "claude-2.1",
+                            "claude-2.0",
+                        ];
+                        let idx = Select::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Model")
+                            .items(&models)
+                            .default(0)
+                            .interact()
+                            .unwrap();
+                        Some(models[idx].to_string())
+                    }
+                    "Ollama" => {
+                        let model: String = Input::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Model name (e.g., llama2, mistral)")
+                            .default("llama2".into())
+                            .interact_text()
+                            .unwrap();
+                        Some(model)
+                    }
+                    _ => None,
+                }
+            };
+
+            // Create provider configuration
+            let provider_config = config::ProviderConfig {
+                provider: provider_name,
+                api_key,
+                model,
+                additional_settings: None,
+            };
+
+            // Validate the configuration
+            println!(
+                "Validating configuration for provider: {}",
+                provider_config.provider
+            );
+            if let Err(e) = config::validate_provider_config(&provider_config) {
+                eprintln!("❌ Invalid configuration: {}", e);
+                std::process::exit(1);
             }
-            // Save configuration to ~/.ola/config.json
-            let home = std::env::var("HOME").expect("Could not determine HOME directory");
-            let config_dir = format!("{}/.ola", home);
-            std::fs::create_dir_all(&config_dir).unwrap_or_else(|e| {
-                eprintln!("Failed to create config directory {}: {}", config_dir, e);
-            });
-            let config_path = format!("{}/config.json", config_dir);
-            let config_json = serde_json::json!({
-                "provider": provider,
-                "details": details,
-            });
-            match std::fs::write(&config_path, config_json.to_string()) {
-                Ok(_) => println!("Configuration saved to {}", config_path),
-                Err(e) => eprintln!("Failed to write configuration file: {}", e),
+
+            // Test connection if possible
+            match provider_config.provider.as_str() {
+                "Ollama" => {
+                    println!("Testing connection to Ollama...");
+                    // Simple test to check if Ollama is running
+                    match std::process::Command::new("curl")
+                        .arg("-s")
+                        .arg("http://localhost:11434/api/version")
+                        .output()
+                    {
+                        Ok(output) => {
+                            if output.status.success() {
+                                println!("✅ Successfully connected to Ollama");
+                            } else {
+                                eprintln!("❌ Failed to connect to Ollama. Is it running?");
+                                std::process::exit(1);
+                            }
+                        }
+                        Err(_) => {
+                            eprintln!("❌ Failed to connect to Ollama. Is it running?");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                "OpenAI" | "Anthropic" => {
+                    println!(
+                        "API key set for {}. Validation complete.",
+                        provider_config.provider
+                    );
+                    // For Anthropic and OpenAI, we just check API key format in validate_provider_config
+                    // A full API test would require making an actual API call
+                }
+                _ => {}
+            };
+
+            // Save configuration
+            config::add_provider(provider_config.clone());
+            if let Err(e) = config::save() {
+                eprintln!("Failed to save configuration: {}", e);
+                std::process::exit(1);
+            }
+
+            println!(
+                "✅ Configuration saved for provider: {}",
+                provider_config.provider
+            );
+            if let Some(model) = provider_config.model {
+                println!("Using model: {}", model);
             }
         }
-        Some(Commands::Session { goals, return_format, warnings }) => {
+        Some(Commands::Session {
+            goals,
+            return_format,
+            warnings,
+        }) => {
             println!("Running session with the following parameters:");
             println!("Goals: {}", goals);
             println!("Return Format: {}", return_format);
@@ -123,37 +277,27 @@ fn main() {
     }
 }
 
-fn run_prompt() {
+fn run_prompt(cli_goals: Option<String>, format: &str, warnings: &str, clipboard: bool) {
     println!("Welcome to the Ola CLI Prompt!");
-    
-    // Ask user for their goals
-    let goals: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("🏆 Goals: ")
-        .default("Anonymous".into())
-        .interact_text()
-        .unwrap();
-    
-    // Ask user for their requested format
-    let return_format_options = vec!["text", "json", "markdown"];
-    let selected_index = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("📝 Requested Format")
-        .items(&return_format_options)
-        .default(0)
-        .interact()
-        .unwrap();
-    let return_format = return_format_options[selected_index].to_string();
-    
-    // Ask user for their warnings
-    let warnings: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("⚠️ Warnings: ")
-        .default("Anonymous".into())
-        .interact_text()
-        .unwrap();
-    
+
+    // Get goals from CLI args or prompt user
+    let goals = if let Some(g) = cli_goals {
+        g
+    } else {
+        Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("🏆 Goals: ")
+            .default("Anonymous".into())
+            .interact_text()
+            .unwrap()
+    };
+
     // Call the prompt function from the ola crate
-    let output = prompt::structure_reasoning(&goals, &return_format, &warnings);
-    
-    println!("Goals: {}\nReturn Format: {}\nWarnings: {}", goals, return_format, warnings);
+    let output = prompt::structure_reasoning(&goals, format, warnings, clipboard);
+
+    println!(
+        "Goals: {}\nReturn Format: {}\nWarnings: {}",
+        goals, format, warnings
+    );
     match output {
         Ok(()) => println!("Prompt executed successfully"),
         Err(e) => println!("Prompt returned error: {:?}", e),

@@ -1,13 +1,21 @@
-use std::io::{Write, BufRead};
-use std::time::Duration;
 use serde_json::json;
-use std::process::{Command, Stdio};
 use std::fs;
+use std::io::{BufRead, Write};
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
-pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn structure_reasoning(
+    goals: &str,
+    return_type: &str,
+    warnings: &str,
+    clipboard: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Build the base input data
-    let mut input_data = format!("Goals: {}\nReturn Type: {}\nWarnings: {}", goals, return_type, warnings);
+    let mut input_data = format!(
+        "Goals: {}\nReturn Type: {}\nWarnings: {}",
+        goals, return_type, warnings
+    );
 
     // Try to read hints from a local .olaHints file; if not found, fallback to global hints
     let mut hints = String::new();
@@ -31,12 +39,28 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
 
     // Create a blocking client with timeout configuration
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))  // 2 minute timeout
+        .timeout(Duration::from_secs(120)) // 2 minute timeout
         .build()?;
+
+    // Load current configuration
+    let config = crate::config::Config::load()?;
+    let provider_config = config.get_active_provider().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No active provider configured. Run 'ola configure' first.",
+        )
+    })?;
+
+    // Use model from config or fallback to default
+    let model = provider_config
+        .model
+        .as_deref()
+        .unwrap_or("deepseek-r1:14b");
+    println!("Using model: {}", model);
 
     // Prepare the JSON payload for Ollama API
     let payload = json!({
-        "model": "deepseek-r1:14b",
+        "model": model,
         "prompt": input_data,
         "stream": true,  // Enable streaming
         "options": {
@@ -45,21 +69,22 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
     });
 
     println!("Sending request to Ollama...");
-    
+
     // Send a POST request to the Ollama API endpoint
     let response = match client
         .post("http://localhost:11434/api/generate")
         .json(&payload)
-        .send() {
-            Ok(resp) => resp,
-            Err(e) => {
-                eprintln!("Failed to send request to Ollama: {}", e);
-                if e.is_timeout() {
-                    eprintln!("Request timed out after 120 seconds");
-                }
-                return Err(e.into());
+        .send()
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            eprintln!("Failed to send request to Ollama: {}", e);
+            if e.is_timeout() {
+                eprintln!("Request timed out after 120 seconds");
             }
-        };
+            return Err(e.into());
+        }
+    };
 
     // Check if response is successful
     if !response.status().is_success() {
@@ -97,17 +122,22 @@ pub fn structure_reasoning(goals: &str, return_type: &str, warnings: &str) -> Re
 
     println!("\n"); // Add a newline at the end
 
-    // Copy the complete response to the clipboard using pbcopy
-    let mut pbcopy = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-        .expect("Failed to start pbcopy");
-    {
-        let stdin = pbcopy.stdin.as_mut().expect("Failed to open pbcopy stdin");
-        stdin.write_all(full_response.as_bytes())?;
+    // Copy to clipboard only if the clipboard flag is set
+    if clipboard {
+        // Copy the complete response to the clipboard using pbcopy
+        let mut pbcopy = Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("Failed to start pbcopy");
+        {
+            let stdin = pbcopy.stdin.as_mut().expect("Failed to open pbcopy stdin");
+            stdin.write_all(full_response.as_bytes())?;
+        }
+        pbcopy.wait()?;
+        println!("Successfully processed response and copied to clipboard");
+    } else {
+        println!("Successfully processed response");
     }
-    pbcopy.wait()?;
-
-    println!("Successfully processed response and copied to clipboard");
+    
     Ok(())
 }
