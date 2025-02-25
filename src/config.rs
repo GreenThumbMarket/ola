@@ -1,8 +1,8 @@
+use dialoguer::{theme::ColorfulTheme, Input, Password, Select};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
-use dialoguer::{theme::ColorfulTheme, Input, Select, Password};
 use std::io;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
@@ -14,7 +14,9 @@ pub struct ProviderConfig {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
+    #[serde(default)]
     pub active_provider: String,
+    #[serde(default)]
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -38,11 +40,11 @@ impl Config {
         let config_path = get_config_path()?;
         let config_dir = config_path.parent().unwrap();
         fs::create_dir_all(config_dir)?;
-        
+
         let config_str = serde_json::to_string_pretty(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         fs::write(&config_path, config_str)?;
-        
+
         // Set restrictive permissions on config file (600)
         #[cfg(unix)]
         {
@@ -51,14 +53,17 @@ impl Config {
             perms.set_mode(0o600);
             fs::set_permissions(&config_path, perms)?;
         }
-        
+
         Ok(())
     }
 
     pub fn add_provider(&mut self, provider: ProviderConfig) {
         let provider_name = provider.provider.clone();
-        if let Some(existing) = self.providers.iter_mut()
-            .find(|p| p.provider == provider_name) {
+        if let Some(existing) = self
+            .providers
+            .iter_mut()
+            .find(|p| p.provider == provider_name)
+        {
             *existing = provider;
         } else {
             self.providers.push(provider);
@@ -67,7 +72,8 @@ impl Config {
     }
 
     pub fn get_active_provider(&self) -> Option<&ProviderConfig> {
-        self.providers.iter()
+        self.providers
+            .iter()
             .find(|p| p.provider == self.active_provider)
     }
 }
@@ -78,11 +84,13 @@ fn get_config_path() -> Result<PathBuf, io::Error> {
     Ok(PathBuf::from(home).join(".ola").join("config.json"))
 }
 
-pub fn run_interactive_config() -> Result<(), io::Error> {
+// This function is now replaced by the implementation in main.rs
+// Keeping the code as a reference, but marking it as private
+fn _run_interactive_config() -> Result<(), io::Error> {
     let mut config = Config::load()?;
-    
+
     println!("🤖 Welcome to Ola Configuration!");
-    
+
     // Provider selection
     let providers = vec!["OpenAI", "Anthropic", "Ollama"];
     let selected_idx = Select::with_theme(&ColorfulTheme::default())
@@ -92,7 +100,7 @@ pub fn run_interactive_config() -> Result<(), io::Error> {
         .interact()
         .unwrap();
     let provider = providers[selected_idx].to_string();
-    
+
     // Get API key securely
     let api_key = Password::with_theme(&ColorfulTheme::default())
         .with_prompt(format!("Enter your {} API key", provider))
@@ -146,22 +154,40 @@ pub fn run_interactive_config() -> Result<(), io::Error> {
 }
 
 pub fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
-    // Validate API key format and presence
-    if config.api_key.trim().is_empty() {
-        return Err("API key cannot be empty".to_string());
-    }
-
     // Provider-specific validation
     match config.provider.as_str() {
         "OpenAI" => {
+            // Validate API key format and presence
+            if config.api_key.trim().is_empty() {
+                return Err("API key cannot be empty".to_string());
+            }
+
             if !config.api_key.starts_with("sk-") {
                 return Err("OpenAI API key should start with 'sk-'".to_string());
             }
+
+            if config.model.is_none() {
+                return Err("OpenAI requires a model name".to_string());
+            }
         }
         "Anthropic" => {
-            // Add Anthropic-specific validation if needed
+            // Validate API key format and presence
+            if config.api_key.trim().is_empty() {
+                return Err("API key cannot be empty".to_string());
+            }
+
+            // Anthropic keys typically start with 'sk-ant-'
+            if !config.api_key.starts_with("sk-ant-") {
+                return Err("Anthropic API key should start with 'sk-ant-'".to_string());
+            }
+
+            if config.model.is_none() {
+                return Err("Anthropic requires a model name".to_string());
+            }
         }
         "Ollama" => {
+            // For Ollama, API key can be empty (local service)
+
             // Validate Ollama configuration
             if config.model.is_none() {
                 return Err("Ollama requires a model name".to_string());
@@ -171,4 +197,26 @@ pub fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// Module-level functions for use in main.rs
+pub fn add_provider(provider: ProviderConfig) {
+    match Config::load() {
+        Ok(mut config) => {
+            config.add_provider(provider);
+            if let Err(e) = config.save() {
+                eprintln!("Failed to save config: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to load config: {}", e);
+        }
+    }
+}
+
+pub fn save() -> Result<(), std::io::Error> {
+    match Config::load() {
+        Ok(config) => config.save(),
+        Err(e) => Err(e),
+    }
 }
