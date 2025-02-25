@@ -9,6 +9,7 @@ pub fn structure_reasoning(
     goals: &str,
     return_type: &str,
     warnings: &str,
+    clipboard: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Build the base input data
     let mut input_data = format!(
@@ -55,6 +56,7 @@ pub fn structure_reasoning(
         .model
         .as_deref()
         .unwrap_or("deepseek-r1:14b");
+    println!("Using model: {}", model);
 
     // Prepare the JSON payload for Ollama API
     let payload = json!({
@@ -120,17 +122,22 @@ pub fn structure_reasoning(
 
     println!("\n"); // Add a newline at the end
 
-    // Copy the complete response to the clipboard using pbcopy
-    let mut pbcopy = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-        .expect("Failed to start pbcopy");
-    {
-        let stdin = pbcopy.stdin.as_mut().expect("Failed to open pbcopy stdin");
-        stdin.write_all(full_response.as_bytes())?;
+    // Copy to clipboard only if the clipboard flag is set
+    if clipboard {
+        // Copy the complete response to the clipboard using pbcopy
+        let mut pbcopy = Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("Failed to start pbcopy");
+        {
+            let stdin = pbcopy.stdin.as_mut().expect("Failed to open pbcopy stdin");
+            stdin.write_all(full_response.as_bytes())?;
+        }
+        pbcopy.wait()?;
+        println!("Successfully processed response and copied to clipboard");
+    } else {
+        println!("Successfully processed response");
     }
-    pbcopy.wait()?;
-
-    println!("Successfully processed response and copied to clipboard");
+    
     Ok(())
 }

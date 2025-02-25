@@ -34,7 +34,21 @@ enum Commands {
         verbose: bool,
     },
 
-    Prompt,
+    /// Prompt command with optional flags for goals, format, and warnings
+    Prompt {
+        /// Optional: specify goals
+        #[arg(short, long)]
+        goals: Option<String>,
+        /// Optional: specify format (defaults to "text")
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+        /// Optional: specify warnings (defaults to empty string)
+        #[arg(short, long, default_value = "")]
+        warnings: String,
+        /// Optional: copy output to clipboard (defaults to false)
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+    },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
     Configure {
@@ -73,8 +87,8 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt) => {
-            run_prompt();
+        Some(Commands::Prompt { goals, format, warnings, clipboard }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -263,39 +277,26 @@ fn main() {
     }
 }
 
-fn run_prompt() {
+fn run_prompt(cli_goals: Option<String>, format: &str, warnings: &str, clipboard: bool) {
     println!("Welcome to the Ola CLI Prompt!");
 
-    // Ask user for their goals
-    let goals: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("🏆 Goals: ")
-        .default("Anonymous".into())
-        .interact_text()
-        .unwrap();
-
-    // Ask user for their requested format
-    let return_format_options = vec!["text", "json", "markdown"];
-    let selected_index = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("📝 Requested Format")
-        .items(&return_format_options)
-        .default(0)
-        .interact()
-        .unwrap();
-    let return_format = return_format_options[selected_index].to_string();
-
-    // Ask user for their warnings
-    let warnings: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("⚠️ Warnings: ")
-        .default("Anonymous".into())
-        .interact_text()
-        .unwrap();
+    // Get goals from CLI args or prompt user
+    let goals = if let Some(g) = cli_goals {
+        g
+    } else {
+        Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("🏆 Goals: ")
+            .default("Anonymous".into())
+            .interact_text()
+            .unwrap()
+    };
 
     // Call the prompt function from the ola crate
-    let output = prompt::structure_reasoning(&goals, &return_format, &warnings);
+    let output = prompt::structure_reasoning(&goals, format, warnings, clipboard);
 
     println!(
         "Goals: {}\nReturn Format: {}\nWarnings: {}",
-        goals, return_format, warnings
+        goals, format, warnings
     );
     match output {
         Ok(()) => println!("Prompt executed successfully"),
