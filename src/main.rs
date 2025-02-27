@@ -48,6 +48,12 @@ enum Commands {
         /// Optional: copy output to clipboard (defaults to false)
         #[arg(short = 'c', long)]
         clipboard: bool,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'p', long)]
+        pipe: bool,
     },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
@@ -73,6 +79,12 @@ enum Commands {
         /// Any warnings to consider
         #[arg(short, long, default_value = "")]
         warnings: String,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'p', long)]
+        pipe: bool,
     },
 }
 
@@ -87,8 +99,8 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt { goals, format, warnings, clipboard }) => {
-            run_prompt(goals.clone(), &format, &warnings, *clipboard);
+        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -246,16 +258,35 @@ fn main() {
             goals,
             return_format,
             warnings,
+            quiet,
+            pipe,
         }) => {
-            println!("Running session with the following parameters:");
-            println!("Goals: {}", goals);
-            println!("Return Format: {}", return_format);
-            if !warnings.is_empty() {
-                println!("Warnings: {}", warnings);
+            // If quiet mode is enabled, don't print informational messages
+            if !quiet {
+                eprintln!("Running session with the following parameters:");
+                eprintln!("Goals: {}", goals);
+                eprintln!("Return Format: {}", return_format);
+                if !warnings.is_empty() {
+                    eprintln!("Warnings: {}", warnings);
+                }
             }
-            // Simulate session processing: in a real app, you'd call the reasoning model
-            let output = format!("Processed session for goals: {}", goals);
-            println!("Output: {}", output);
+            
+            // Check if we should use stdin input
+            let input_content = if *pipe {
+                read_from_stdin()
+            } else {
+                String::new()
+            };
+            
+            // In a real app, you'd pass input_content to the reasoning model
+            let output = if input_content.is_empty() {
+                format!("Processed session for goals: {}", goals)
+            } else {
+                format!("Processed session for goals: {} with input: {}", goals, input_content)
+            };
+            
+            // Send the main output to stdout for piping
+            println!("{}", output);
 
             // Log session output to a jsonl file
             let log_entry = json!({
@@ -263,22 +294,49 @@ fn main() {
                 "goals": goals,
                 "return_format": return_format,
                 "warnings": warnings,
+                "input": input_content,
                 "output": output,
             });
             if let Err(e) = append_to_log("sessions.jsonl", &log_entry.to_string()) {
                 eprintln!("Failed to log session: {}", e);
-            } else {
-                println!("Session output logged to sessions.jsonl");
+            } else if !quiet {
+                eprintln!("Session output logged to sessions.jsonl");
             }
         }
         None => {
-            println!("No subcommand was used. Try `ola --help` for more info.");
+            eprintln!("No subcommand was used. Try `ola --help` for more info.");
         }
     }
 }
 
-fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool) {
-    println!("Welcome to the Ola CLI Prompt!");
+fn read_from_stdin() -> String {
+    use std::io::{self, Read};
+    
+    // Check if stdin has data available
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
+    
+    let mut buffer = String::new();
+    match handle.read_to_string(&mut buffer) {
+        Ok(_) => buffer,
+        Err(e) => {
+            eprintln!("Error reading from stdin: {}", e);
+            String::new()
+        }
+    }
+}
+
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool) {
+    if !quiet {
+        eprintln!("Welcome to the Ola CLI Prompt!");
+    }
+
+    // Read from stdin if pipe mode is enabled
+    let piped_content = if pipe {
+        read_from_stdin()
+    } else {
+        String::new()
+    };
 
     // Check if goals were provided via CLI to determine flow
     let cli_goals_provided = cli_goals.is_some();
@@ -286,6 +344,9 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     // Get goals from CLI args or prompt user
     let goals = if let Some(g) = cli_goals {
         g
+    } else if !piped_content.is_empty() {
+        // Use piped content as goals if no explicit goals were provided
+        piped_content.clone()
     } else {
         Input::with_theme(&ColorfulTheme::default())
             .with_prompt("🏆 Goals: ")
@@ -296,7 +357,7 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
 
     // If goals were provided via CLI, use the CLI args for format and warnings too
     // Otherwise, prompt for all three parts
-    let (format, warnings) = if cli_goals_provided {
+    let (format, warnings) = if cli_goals_provided || !piped_content.is_empty() {
         (cli_format.to_string(), cli_warnings.to_string())
     } else {
         // Prompt for return format
@@ -316,16 +377,36 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         (format, warnings)
     };
 
-    // Call the prompt function from the ola crate
-    let output = prompt::structure_reasoning(&goals, &format, &warnings, clipboard);
+    // If we have piped content but also explicit goals, use piped content as context
+    let (final_goals, context) = if !piped_content.is_empty() && cli_goals_provided {
+        (goals, Some(piped_content))
+    } else {
+        (goals, None)
+    };
 
-    println!(
-        "Goals: {}\nReturn Format: {}\nWarnings: {}",
-        goals, format, warnings
-    );
+    // Call the prompt function from the ola crate with context
+    let output = match &context {
+        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx)),
+        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None),
+    };
+
+    if !quiet {
+        eprintln!(
+            "Goals: {}\nReturn Format: {}\nWarnings: {}",
+            final_goals, format, warnings
+        );
+        if let Some(ctx) = context {
+            eprintln!("Context from stdin: {} characters", ctx.len());
+        }
+    }
+    
     match output {
-        Ok(()) => println!("Prompt executed successfully"),
-        Err(e) => println!("Prompt returned error: {:?}", e),
+        Ok(()) => {
+            if !quiet {
+                eprintln!("Prompt executed successfully");
+            }
+        },
+        Err(e) => eprintln!("Prompt returned error: {:?}", e),
     }
 }
 

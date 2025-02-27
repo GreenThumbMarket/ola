@@ -14,10 +14,10 @@
 - **Error Handling**: Use `anyhow` for errors, propagate with `?` operator
 
 ## Feature Guidelines
-- **Specs**: Read the spec for a feature before implementation. Ask questions if needed. If you can't find the spec, ask for it.
+- **Specs**: Specs are to be found in the .claude/ directory. Read the spec for a feature before implementation. Ask questions if needed. If you can't find the spec, ask for it.
 - **Design**: Design the feature before implementation. Think about the data structures, algorithms, and edge cases.
 - **Implementation**: Write clean, readable, and efficient code. Follow the project structure and code style guidelines.
-- **Testing**: Write tests for core functionality, edge cases, and error handling. Ensure tests cover all possible scenarios.
+- **Testing**: Ensure that `cargo build` passes. `cargo test` should cover core functionality. Write tests for edge cases and verify tests pass.
 - **Documentation**: Document public functions, include usage examples, and explain the purpose of the feature. For ola codebase,
 use the --help flag to display the documentation for a command or subcommand. Use traditional CLI formatting for the help text 
 (e.g., `--flag` or `-f` for flags, `<arg>` for arguments, `[arg]` for optional arguments, etc.).
