@@ -48,6 +48,12 @@ enum Commands {
         /// Optional: copy output to clipboard (defaults to false)
         #[arg(short = 'c', long)]
         clipboard: bool,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'p', long)]
+        pipe: bool,
     },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
@@ -62,6 +68,15 @@ enum Commands {
         #[arg(short, long)]
         model: Option<String>,
     },
+    /// List available models for the configured provider
+    Models {
+        /// Optional: specify provider (defaults to configured provider)
+        #[arg(short, long)]
+        provider: Option<String>,
+        /// Optional: suppress informational output, only show model names
+        #[arg(short = 'q', long)]
+        quiet: bool,
+    },
     /// Run a session with specified goals, return format, and warnings.
     Session {
         /// Goals for the reasoning call
@@ -73,6 +88,12 @@ enum Commands {
         /// Any warnings to consider
         #[arg(short, long, default_value = "")]
         warnings: String,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'p', long)]
+        pipe: bool,
     },
 }
 
@@ -87,8 +108,12 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt { goals, format, warnings, clipboard }) => {
-            run_prompt(goals.clone(), &format, &warnings, *clipboard);
+        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe);
+        }
+        Some(Commands::Models { provider, quiet }) => {
+            // Handle the Models subcommand
+            list_models(provider.clone(), *quiet);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -163,12 +188,39 @@ fn main() {
                         Some(models[idx].to_string())
                     }
                     "Ollama" => {
-                        let model: String = Input::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Model name (e.g., llama2, mistral)")
-                            .default("llama2".into())
-                            .interact_text()
-                            .unwrap();
-                        Some(model)
+                        // Fetch available models from Ollama API
+                        match config::fetch_ollama_models() {
+                            Ok(models) => {
+                                if models.is_empty() {
+                                    eprintln!("No models found in Ollama. Using manual input...");
+                                    let model: String = Input::with_theme(&ColorfulTheme::default())
+                                        .with_prompt("Model name (e.g., llama2, mistral)")
+                                        .default("llama2".into())
+                                        .interact_text()
+                                        .unwrap();
+                                    Some(model)
+                                } else {
+                                    // Display available models in a select menu
+                                    println!("Found {} models in Ollama", models.len());
+                                    let selected_idx = Select::with_theme(&ColorfulTheme::default())
+                                        .with_prompt("Select a model")
+                                        .items(&models)
+                                        .default(0)
+                                        .interact()
+                                        .unwrap();
+                                    Some(models[selected_idx].clone())
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("Failed to fetch Ollama models: {}. Using manual input...", e);
+                                let model: String = Input::with_theme(&ColorfulTheme::default())
+                                    .with_prompt("Model name (e.g., llama2, mistral)")
+                                    .default("llama2".into())
+                                    .interact_text()
+                                    .unwrap();
+                                Some(model)
+                            }
+                        }
                     }
                     _ => None,
                 }
@@ -246,16 +298,35 @@ fn main() {
             goals,
             return_format,
             warnings,
+            quiet,
+            pipe,
         }) => {
-            println!("Running session with the following parameters:");
-            println!("Goals: {}", goals);
-            println!("Return Format: {}", return_format);
-            if !warnings.is_empty() {
-                println!("Warnings: {}", warnings);
+            // If quiet mode is enabled, don't print informational messages
+            if !quiet {
+                eprintln!("Running session with the following parameters:");
+                eprintln!("Goals: {}", goals);
+                eprintln!("Return Format: {}", return_format);
+                if !warnings.is_empty() {
+                    eprintln!("Warnings: {}", warnings);
+                }
             }
-            // Simulate session processing: in a real app, you'd call the reasoning model
-            let output = format!("Processed session for goals: {}", goals);
-            println!("Output: {}", output);
+            
+            // Check if we should use stdin input
+            let input_content = if *pipe {
+                read_from_stdin()
+            } else {
+                String::new()
+            };
+            
+            // In a real app, you'd pass input_content to the reasoning model
+            let output = if input_content.is_empty() {
+                format!("Processed session for goals: {}", goals)
+            } else {
+                format!("Processed session for goals: {} with input: {}", goals, input_content)
+            };
+            
+            // Send the main output to stdout for piping
+            println!("{}", output);
 
             // Log session output to a jsonl file
             let log_entry = json!({
@@ -263,26 +334,59 @@ fn main() {
                 "goals": goals,
                 "return_format": return_format,
                 "warnings": warnings,
+                "input": input_content,
                 "output": output,
             });
             if let Err(e) = append_to_log("sessions.jsonl", &log_entry.to_string()) {
                 eprintln!("Failed to log session: {}", e);
-            } else {
-                println!("Session output logged to sessions.jsonl");
+            } else if !quiet {
+                eprintln!("Session output logged to sessions.jsonl");
             }
         }
         None => {
-            println!("No subcommand was used. Try `ola --help` for more info.");
+            eprintln!("No subcommand was used. Try `ola --help` for more info.");
         }
     }
 }
 
-fn run_prompt(cli_goals: Option<String>, format: &str, warnings: &str, clipboard: bool) {
-    println!("Welcome to the Ola CLI Prompt!");
+fn read_from_stdin() -> String {
+    use std::io::{self, Read};
+    
+    // Check if stdin has data available
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
+    
+    let mut buffer = String::new();
+    match handle.read_to_string(&mut buffer) {
+        Ok(_) => buffer,
+        Err(e) => {
+            eprintln!("Error reading from stdin: {}", e);
+            String::new()
+        }
+    }
+}
 
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool) {
+    if !quiet {
+        eprintln!("Welcome to the Ola CLI Prompt!");
+    }
+
+    // Read from stdin if pipe mode is enabled
+    let piped_content = if pipe {
+        read_from_stdin()
+    } else {
+        String::new()
+    };
+
+    // Check if goals were provided via CLI to determine flow
+    let cli_goals_provided = cli_goals.is_some();
+    
     // Get goals from CLI args or prompt user
     let goals = if let Some(g) = cli_goals {
         g
+    } else if !piped_content.is_empty() {
+        // Use piped content as goals if no explicit goals were provided
+        piped_content.clone()
     } else {
         Input::with_theme(&ColorfulTheme::default())
             .with_prompt("🏆 Goals: ")
@@ -291,16 +395,58 @@ fn run_prompt(cli_goals: Option<String>, format: &str, warnings: &str, clipboard
             .unwrap()
     };
 
-    // Call the prompt function from the ola crate
-    let output = prompt::structure_reasoning(&goals, format, warnings, clipboard);
+    // If goals were provided via CLI, use the CLI args for format and warnings too
+    // Otherwise, prompt for all three parts
+    let (format, warnings) = if cli_goals_provided || !piped_content.is_empty() {
+        (cli_format.to_string(), cli_warnings.to_string())
+    } else {
+        // Prompt for return format
+        let format = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("📝 Return Format: ")
+            .default("text".into())
+            .interact_text()
+            .unwrap();
+        
+        // Prompt for warnings
+        let warnings = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("⚠️ Warnings: ")
+            .default("".into())
+            .interact_text()
+            .unwrap();
+        
+        (format, warnings)
+    };
 
-    println!(
-        "Goals: {}\nReturn Format: {}\nWarnings: {}",
-        goals, format, warnings
-    );
+    // If we have piped content but also explicit goals, use piped content as context
+    let (final_goals, context) = if !piped_content.is_empty() && cli_goals_provided {
+        (goals, Some(piped_content))
+    } else {
+        (goals, None)
+    };
+
+    // Call the prompt function from the ola crate with context
+    let output = match &context {
+        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx)),
+        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None),
+    };
+
+    if !quiet {
+        eprintln!(
+            "Goals: {}\nReturn Format: {}\nWarnings: {}",
+            final_goals, format, warnings
+        );
+        if let Some(ctx) = context {
+            eprintln!("Context from stdin: {} characters", ctx.len());
+        }
+    }
+    
     match output {
-        Ok(()) => println!("Prompt executed successfully"),
-        Err(e) => println!("Prompt returned error: {:?}", e),
+        Ok(()) => {
+            if !quiet {
+                eprintln!("Prompt executed successfully");
+            }
+        },
+        Err(e) => eprintln!("Prompt returned error: {:?}", e),
     }
 }
 
@@ -311,4 +457,97 @@ fn append_to_log(filename: &str, entry: &str) -> std::io::Result<()> {
         .open(filename)?;
     writeln!(file, "{}", entry)?;
     Ok(())
+}
+
+/// List available models for the specified provider
+fn list_models(provider: Option<String>, quiet: bool) {
+    // Load current configuration
+    let config = match config::Config::load() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Failed to load configuration: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Determine the provider to use
+    let provider_name = if let Some(p) = provider {
+        p
+    } else if !config.active_provider.is_empty() {
+        config.active_provider.clone()
+    } else {
+        eprintln!("No provider specified and no active provider configured.");
+        eprintln!("Please run 'ola configure' first or specify a provider with --provider.");
+        std::process::exit(1);
+    };
+
+    if !quiet {
+        println!("Fetching available models for provider: {}", provider_name);
+    }
+
+    match provider_name.as_str() {
+        "Ollama" => {
+            // Fetch models from Ollama API
+            match config::fetch_ollama_models() {
+                Ok(models) => {
+                    if models.is_empty() {
+                        if !quiet {
+                            println!("No models found in Ollama.");
+                        }
+                    } else {
+                        if !quiet {
+                            println!("Available Ollama models:");
+                            for (i, model) in models.iter().enumerate() {
+                                println!("  {}. {}", i + 1, model);
+                            }
+                        } else {
+                            // In quiet mode, just print model names (one per line)
+                            for model in models {
+                                println!("{}", model);
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to fetch Ollama models: {}", e);
+                    eprintln!("Is Ollama running on http://localhost:11434?");
+                    std::process::exit(1);
+                }
+            }
+        },
+        "OpenAI" => {
+            if !quiet {
+                println!("OpenAI models:");
+                println!("  1. gpt-4o");
+                println!("  2. gpt-4-turbo");
+                println!("  3. gpt-4");
+                println!("  4. gpt-3.5-turbo");
+            } else {
+                println!("gpt-4o");
+                println!("gpt-4-turbo");
+                println!("gpt-4");
+                println!("gpt-3.5-turbo");
+            }
+        },
+        "Anthropic" => {
+            if !quiet {
+                println!("Anthropic models:");
+                println!("  1. claude-3-opus-20240229");
+                println!("  2. claude-3-sonnet-20240229");
+                println!("  3. claude-3-haiku-20240307");
+                println!("  4. claude-2.1");
+                println!("  5. claude-2.0");
+            } else {
+                println!("claude-3-opus-20240229");
+                println!("claude-3-sonnet-20240229");
+                println!("claude-3-haiku-20240307");
+                println!("claude-2.1");
+                println!("claude-2.0");
+            }
+        },
+        _ => {
+            eprintln!("Unsupported provider: {}", provider_name);
+            std::process::exit(1);
+        }
+    }
 }

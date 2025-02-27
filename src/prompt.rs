@@ -10,12 +10,20 @@ pub fn structure_reasoning(
     return_type: &str,
     warnings: &str,
     clipboard: bool,
+    context: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Build the base input data
-    let mut input_data = format!(
-        "Goals: {}\nReturn Type: {}\nWarnings: {}",
-        goals, return_type, warnings
-    );
+    // Build the base input data with optional context
+    let mut input_data = if let Some(ctx) = context {
+        format!(
+            "Goals: {}\nReturn Type: {}\nWarnings: {}\nContext: {}",
+            goals, return_type, warnings, ctx
+        )
+    } else {
+        format!(
+            "Goals: {}\nReturn Type: {}\nWarnings: {}",
+            goals, return_type, warnings
+        )
+    };
 
     // Try to read hints from a local .olaHints file; if not found, fallback to global hints
     let mut hints = String::new();
@@ -114,6 +122,7 @@ pub fn structure_reasoning(
 
         // Extract and print the response text
         if let Some(text) = json_response["response"].as_str() {
+            // Print directly to stdout for piping
             print!("{}", text);
             std::io::stdout().flush()?;
             full_response.push_str(text);
@@ -124,19 +133,48 @@ pub fn structure_reasoning(
 
     // Copy to clipboard only if the clipboard flag is set
     if clipboard {
-        // Copy the complete response to the clipboard using pbcopy
-        let mut pbcopy = Command::new("pbcopy")
+        // Get the operating system
+        let os = std::env::consts::OS;
+        
+        // Use the appropriate clipboard command based on OS
+        let (cmd, args) = match os {
+            "macos" => ("pbcopy", vec![]),
+            "linux" => ("xclip", vec!["-selection", "clipboard"]),
+            "windows" => ("clip", vec![]),
+            _ => {
+                eprintln!("Clipboard functionality not supported on this platform: {}", os);
+                return Ok(());
+            }
+        };
+        
+        // Execute clipboard command
+        let status = match Command::new(cmd)
+            .args(&args)
             .stdin(Stdio::piped())
-            .spawn()
-            .expect("Failed to start pbcopy");
-        {
-            let stdin = pbcopy.stdin.as_mut().expect("Failed to open pbcopy stdin");
-            stdin.write_all(full_response.as_bytes())?;
+            .spawn() {
+                Ok(mut child) => {
+                    {
+                        let stdin = child.stdin.as_mut()
+                            .expect("Failed to open clipboard command stdin");
+                        stdin.write_all(full_response.as_bytes())?;
+                    }
+                    child.wait()
+                },
+                Err(e) => {
+                    eprintln!("Failed to start clipboard command: {}. Error: {}", cmd, e);
+                    return Ok(());
+                }
+            };
+            
+        if let Ok(exit_status) = status {
+            if exit_status.success() {
+                eprintln!("Successfully processed response and copied to clipboard");
+            } else {
+                eprintln!("Clipboard command failed with exit code: {:?}", exit_status.code());
+            }
         }
-        pbcopy.wait()?;
-        println!("Successfully processed response and copied to clipboard");
     } else {
-        println!("Successfully processed response");
+        eprintln!("Successfully processed response");
     }
     
     Ok(())
