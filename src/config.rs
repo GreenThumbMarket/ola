@@ -153,6 +153,33 @@ fn _run_interactive_config() -> Result<(), io::Error> {
     Ok(())
 }
 
+pub fn fetch_ollama_models() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+    
+    let response = client
+        .get("http://localhost:11434/api/tags")
+        .send()?;
+    
+    if !response.status().is_success() {
+        return Err(format!("Ollama API error: {}", response.status()).into());
+    }
+    
+    let models_response: serde_json::Value = response.json()?;
+    let mut model_names = Vec::new();
+    
+    if let Some(models) = models_response["models"].as_array() {
+        for model in models {
+            if let Some(name) = model["name"].as_str() {
+                model_names.push(name.to_string());
+            }
+        }
+    }
+    
+    Ok(model_names)
+}
+
 pub fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
     // Provider-specific validation
     match config.provider.as_str() {

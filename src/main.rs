@@ -68,6 +68,15 @@ enum Commands {
         #[arg(short, long)]
         model: Option<String>,
     },
+    /// List available models for the configured provider
+    Models {
+        /// Optional: specify provider (defaults to configured provider)
+        #[arg(short, long)]
+        provider: Option<String>,
+        /// Optional: suppress informational output, only show model names
+        #[arg(short = 'q', long)]
+        quiet: bool,
+    },
     /// Run a session with specified goals, return format, and warnings.
     Session {
         /// Goals for the reasoning call
@@ -101,6 +110,10 @@ fn main() {
         }
         Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe }) => {
             run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe);
+        }
+        Some(Commands::Models { provider, quiet }) => {
+            // Handle the Models subcommand
+            list_models(provider.clone(), *quiet);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -175,12 +188,39 @@ fn main() {
                         Some(models[idx].to_string())
                     }
                     "Ollama" => {
-                        let model: String = Input::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Model name (e.g., llama2, mistral)")
-                            .default("llama2".into())
-                            .interact_text()
-                            .unwrap();
-                        Some(model)
+                        // Fetch available models from Ollama API
+                        match config::fetch_ollama_models() {
+                            Ok(models) => {
+                                if models.is_empty() {
+                                    eprintln!("No models found in Ollama. Using manual input...");
+                                    let model: String = Input::with_theme(&ColorfulTheme::default())
+                                        .with_prompt("Model name (e.g., llama2, mistral)")
+                                        .default("llama2".into())
+                                        .interact_text()
+                                        .unwrap();
+                                    Some(model)
+                                } else {
+                                    // Display available models in a select menu
+                                    println!("Found {} models in Ollama", models.len());
+                                    let selected_idx = Select::with_theme(&ColorfulTheme::default())
+                                        .with_prompt("Select a model")
+                                        .items(&models)
+                                        .default(0)
+                                        .interact()
+                                        .unwrap();
+                                    Some(models[selected_idx].clone())
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("Failed to fetch Ollama models: {}. Using manual input...", e);
+                                let model: String = Input::with_theme(&ColorfulTheme::default())
+                                    .with_prompt("Model name (e.g., llama2, mistral)")
+                                    .default("llama2".into())
+                                    .interact_text()
+                                    .unwrap();
+                                Some(model)
+                            }
+                        }
                     }
                     _ => None,
                 }
@@ -417,4 +457,97 @@ fn append_to_log(filename: &str, entry: &str) -> std::io::Result<()> {
         .open(filename)?;
     writeln!(file, "{}", entry)?;
     Ok(())
+}
+
+/// List available models for the specified provider
+fn list_models(provider: Option<String>, quiet: bool) {
+    // Load current configuration
+    let config = match config::Config::load() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Failed to load configuration: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Determine the provider to use
+    let provider_name = if let Some(p) = provider {
+        p
+    } else if !config.active_provider.is_empty() {
+        config.active_provider.clone()
+    } else {
+        eprintln!("No provider specified and no active provider configured.");
+        eprintln!("Please run 'ola configure' first or specify a provider with --provider.");
+        std::process::exit(1);
+    };
+
+    if !quiet {
+        println!("Fetching available models for provider: {}", provider_name);
+    }
+
+    match provider_name.as_str() {
+        "Ollama" => {
+            // Fetch models from Ollama API
+            match config::fetch_ollama_models() {
+                Ok(models) => {
+                    if models.is_empty() {
+                        if !quiet {
+                            println!("No models found in Ollama.");
+                        }
+                    } else {
+                        if !quiet {
+                            println!("Available Ollama models:");
+                            for (i, model) in models.iter().enumerate() {
+                                println!("  {}. {}", i + 1, model);
+                            }
+                        } else {
+                            // In quiet mode, just print model names (one per line)
+                            for model in models {
+                                println!("{}", model);
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to fetch Ollama models: {}", e);
+                    eprintln!("Is Ollama running on http://localhost:11434?");
+                    std::process::exit(1);
+                }
+            }
+        },
+        "OpenAI" => {
+            if !quiet {
+                println!("OpenAI models:");
+                println!("  1. gpt-4o");
+                println!("  2. gpt-4-turbo");
+                println!("  3. gpt-4");
+                println!("  4. gpt-3.5-turbo");
+            } else {
+                println!("gpt-4o");
+                println!("gpt-4-turbo");
+                println!("gpt-4");
+                println!("gpt-3.5-turbo");
+            }
+        },
+        "Anthropic" => {
+            if !quiet {
+                println!("Anthropic models:");
+                println!("  1. claude-3-opus-20240229");
+                println!("  2. claude-3-sonnet-20240229");
+                println!("  3. claude-3-haiku-20240307");
+                println!("  4. claude-2.1");
+                println!("  5. claude-2.0");
+            } else {
+                println!("claude-3-opus-20240229");
+                println!("claude-3-sonnet-20240229");
+                println!("claude-3-haiku-20240307");
+                println!("claude-2.1");
+                println!("claude-2.0");
+            }
+        },
+        _ => {
+            eprintln!("Unsupported provider: {}", provider_name);
+            std::process::exit(1);
+        }
+    }
 }
