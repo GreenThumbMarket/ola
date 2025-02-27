@@ -277,9 +277,12 @@ fn main() {
     }
 }
 
-fn run_prompt(cli_goals: Option<String>, format: &str, warnings: &str, clipboard: bool) {
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool) {
     println!("Welcome to the Ola CLI Prompt!");
 
+    // Check if goals were provided via CLI to determine flow
+    let cli_goals_provided = cli_goals.is_some();
+    
     // Get goals from CLI args or prompt user
     let goals = if let Some(g) = cli_goals {
         g
@@ -291,8 +294,30 @@ fn run_prompt(cli_goals: Option<String>, format: &str, warnings: &str, clipboard
             .unwrap()
     };
 
+    // If goals were provided via CLI, use the CLI args for format and warnings too
+    // Otherwise, prompt for all three parts
+    let (format, warnings) = if cli_goals_provided {
+        (cli_format.to_string(), cli_warnings.to_string())
+    } else {
+        // Prompt for return format
+        let format = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("📝 Return Format: ")
+            .default("text".into())
+            .interact_text()
+            .unwrap();
+        
+        // Prompt for warnings
+        let warnings = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("⚠️ Warnings: ")
+            .default("".into())
+            .interact_text()
+            .unwrap();
+        
+        (format, warnings)
+    };
+
     // Call the prompt function from the ola crate
-    let output = prompt::structure_reasoning(&goals, format, warnings, clipboard);
+    let output = prompt::structure_reasoning(&goals, &format, &warnings, clipboard);
 
     println!(
         "Goals: {}\nReturn Format: {}\nWarnings: {}",
