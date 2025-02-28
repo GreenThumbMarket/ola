@@ -1,6 +1,7 @@
 # Ola Codebase Guidelines
 
 ## Delopment Guidelines
+- **Definition of Done**: Feature is complete when functionality is implemented, tested, and documented. See Feature Guidelines below. 
 - **Rust Version**: Use the latest stable version of Rust
 - **Dependencies**: Keep dependencies to a minimum, avoid unnecessary crates
 - **Testing**: Write tests for core functionality, use `cargo test`
@@ -17,7 +18,7 @@
 - **Specs**: Specs are to be found in the .claude/ directory. Read the spec for a feature before implementation. Ask questions if needed. If you can't find the spec, ask for it.
 - **Design**: Design the feature before implementation. Think about the data structures, algorithms, and edge cases.
 - **Implementation**: Write clean, readable, and efficient code. Follow the project structure and code style guidelines.
-- **Testing**: Ensure that `cargo build` passes. `cargo test` should cover core functionality. Write tests for edge cases and verify tests pass.
+- **Testing**: Your feature isn't complete until `cargo build` passes. Write tests for core functionality, use `cargo test`.
 - **Documentation**: Document public functions, include usage examples, and explain the purpose of the feature. For ola codebase,
 use the --help flag to display the documentation for a command or subcommand. Use traditional CLI formatting for the help text 
 (e.g., `--flag` or `-f` for flags, `<arg>` for arguments, `[arg]` for optional arguments, etc.).

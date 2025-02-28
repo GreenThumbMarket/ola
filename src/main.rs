@@ -6,7 +6,7 @@
 */
 
 use chrono::Utc;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
 use serde_json::json;
 use std::fs::OpenOptions;
@@ -25,7 +25,7 @@ struct OlaCli {
     command: Option<Commands>,
 }
 
-#[derive(Subcommand)]
+#[derive(clap::Subcommand)]
 enum Commands {
     /// Starts the application with optional arguments
     Start {
@@ -37,7 +37,7 @@ enum Commands {
     /// Prompt command with optional flags for goals, format, and warnings
     Prompt {
         /// Optional: specify goals
-        #[arg(short, long)]
+        #[arg(short = 'g', long)]
         goals: Option<String>,
         /// Optional: specify format (defaults to "text")
         #[arg(short = 'f', long, default_value = "text")]
@@ -54,6 +54,9 @@ enum Commands {
         /// Optional: read input from stdin (pipe) instead of interactive prompt
         #[arg(short = 'p', long)]
         pipe: bool,
+        /// Hide thinking blocks (<think> </think>) and show an animation instead
+        #[arg(short = 't', long)]
+        no_thinking: bool,
     },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
@@ -95,6 +98,24 @@ enum Commands {
         #[arg(short = 'p', long)]
         pipe: bool,
     },
+    /// Direct prompt without thinking steps structure
+    NonThink {
+        /// The raw prompt to send
+        #[arg(short = 'p', long)]
+        prompt: Option<String>,
+        /// Optional: copy output to clipboard (defaults to false)
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'i', long)]
+        pipe: bool,
+        /// Filter out thinking blocks and show an animation instead
+        #[arg(short = 'f', long)]
+        filter_thinking: bool,
+    },
 }
 
 fn main() {
@@ -108,8 +129,11 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe }) => {
-            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe);
+        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking);
+        }
+        Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking }) => {
+            run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking);
         }
         Some(Commands::Models { provider, quiet }) => {
             // Handle the Models subcommand
@@ -366,7 +390,7 @@ fn read_from_stdin() -> String {
     }
 }
 
-fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool) {
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool) {
     if !quiet {
         eprintln!("Welcome to the Ola CLI Prompt!");
     }
@@ -426,8 +450,8 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
 
     // Call the prompt function from the ola crate with context
     let output = match &context {
-        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx)),
-        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None),
+        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx), no_thinking),
+        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None, no_thinking),
     };
 
     if !quiet {
@@ -444,6 +468,64 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         Ok(()) => {
             if !quiet {
                 eprintln!("Prompt executed successfully");
+            }
+        },
+        Err(e) => eprintln!("Prompt returned error: {:?}", e),
+    }
+}
+
+fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe: bool, filter_thinking: bool) {
+    if !quiet {
+        eprintln!("Running direct prompt without thinking steps...");
+    }
+
+    // Read from stdin if pipe mode is enabled
+    let piped_content = if pipe {
+        read_from_stdin()
+    } else {
+        String::new()
+    };
+
+    // Check if prompt was provided via CLI to determine flow
+    let cli_prompt_provided = cli_prompt.is_some();
+    
+    // Get prompt from CLI args or prompt user
+    let prompt = if let Some(p) = cli_prompt {
+        p
+    } else if !piped_content.is_empty() {
+        // Use piped content as prompt if no explicit prompt was provided
+        piped_content.clone()
+    } else {
+        Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Enter your prompt: ")
+            .default("".into())
+            .interact_text()
+            .unwrap()
+    };
+
+    // If we have piped content but also explicit prompt, use piped content as context
+    let (final_prompt, context) = if !piped_content.is_empty() && cli_prompt_provided {
+        (prompt, Some(piped_content))
+    } else {
+        (prompt, None)
+    };
+
+    // Call the new function from the prompt module
+    let output = match &context {
+        Some(ctx) => prompt::stream_non_think(&final_prompt, clipboard, Some(ctx), filter_thinking),
+        None => prompt::stream_non_think(&final_prompt, clipboard, None, filter_thinking),
+    };
+
+    if !quiet {
+        if let Some(ctx) = context {
+            eprintln!("Context from stdin: {} characters", ctx.len());
+        }
+    }
+    
+    match output {
+        Ok(()) => {
+            if !quiet {
+                eprintln!("Non-think prompt executed successfully");
             }
         },
         Err(e) => eprintln!("Prompt returned error: {:?}", e),
