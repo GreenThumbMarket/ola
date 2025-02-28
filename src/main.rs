@@ -58,6 +58,22 @@ enum Commands {
         #[arg(short = 't', long)]
         no_thinking: bool,
     },
+    
+    /// Generate a CLI command from a natural language prompt
+    Cli {
+        /// The natural language prompt describing the command you want
+        #[arg(short = 'p', long)]
+        prompt: Option<String>,
+        /// Optional: copy output to clipboard (defaults to false)
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'i', long)]
+        pipe: bool,
+    },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
     Configure {
@@ -131,6 +147,9 @@ fn main() {
         }
         Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking }) => {
             run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking);
+        }
+        Some(Commands::Cli { prompt, clipboard, quiet, pipe }) => {
+            run_cli_command(prompt.clone(), *clipboard, *quiet, *pipe);
         }
         Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking }) => {
             run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking);
@@ -529,6 +548,72 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
             }
         },
         Err(e) => eprintln!("Prompt returned error: {:?}", e),
+    }
+}
+
+fn run_cli_command(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe: bool) {
+    if !quiet {
+        eprintln!("Generating CLI command...");
+    }
+
+    // Read from stdin if pipe mode is enabled
+    let piped_content = if pipe {
+        read_from_stdin()
+    } else {
+        String::new()
+    };
+
+    // Check if prompt was provided via CLI to determine flow
+    let cli_prompt_provided = cli_prompt.is_some();
+    
+    // Get prompt from CLI args or prompt user
+    let prompt = if let Some(p) = cli_prompt {
+        p
+    } else if !piped_content.is_empty() {
+        // Use piped content as prompt if no explicit prompt was provided
+        piped_content.clone()
+    } else {
+        Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Describe the command you want: ")
+            .default("".into())
+            .interact_text()
+            .unwrap()
+    };
+
+    // If we have piped content but also explicit prompt, use piped content as context
+    let (final_prompt, context) = if !piped_content.is_empty() && cli_prompt_provided {
+        (prompt, Some(piped_content))
+    } else {
+        (prompt, None)
+    };
+
+    // Prepend the instruction to only return a CLI command
+    let cli_prompt = format!(
+        "Generate a single command line command that does the following: {}. \
+        Respond with ONLY the command, no explanations. The command should be \
+        correct, functional, and use standard syntax.", 
+        final_prompt
+    );
+
+    // Call stream_non_think with filter_thinking always set to true
+    let output = match &context {
+        Some(ctx) => prompt::stream_non_think(&cli_prompt, clipboard, Some(ctx), true),
+        None => prompt::stream_non_think(&cli_prompt, clipboard, None, true),
+    };
+
+    if !quiet {
+        if let Some(ctx) = context {
+            eprintln!("Context from stdin: {} characters", ctx.len());
+        }
+    }
+    
+    match output {
+        Ok(()) => {
+            if !quiet {
+                eprintln!("CLI command generated successfully");
+            }
+        },
+        Err(e) => eprintln!("Command generation returned error: {:?}", e),
     }
 }
 
