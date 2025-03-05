@@ -1,7 +1,13 @@
 # Ola Codebase Guidelines
 
+## Main Rules
+=======================================================================================================
+!!! IMPORTANT !!!
+=======================================================================================================
+- **Definition of Done**: Whenever you're coding, your code isn't finished until `cargo build` passes.
+
+
 ## Delopment Guidelines
-- **Definition of Done**: Feature is complete when functionality is implemented, tested, and documented. See Feature Guidelines below. 
 - **Rust Version**: Use the latest stable version of Rust
 - **Dependencies**: Keep dependencies to a minimum, avoid unnecessary crates
 - **Testing**: Write tests for core functionality, use `cargo test`

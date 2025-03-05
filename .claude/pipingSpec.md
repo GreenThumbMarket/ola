@@ -32,6 +32,13 @@ ola prompt --goals "Generate a Python script for data analysis" > analysis.py
 ola prompt --goals "Generate a list of keywords" | sort | uniq -c
 ```
 
+#### Test Case
+```bash
+# Pipe Ola output to claude effectively
+cat README.md | claude -p 'summarize the content';
+```
+
+
 ## Implementation Requirements
 
 ### Input Piping Implementation

@@ -1,95 +1,75 @@
-### Development Roadmap for CLI-Related Features
+# Ola Development Roadmap
 
-#### Version 1.0.0 - CLI Foundation
-**Milestones:**  
-- Establish basic CLI structure.  
-- Implement core command parsing functionality.  
+## Current Status (Version 0.2.0)
 
-**Tasks:**  
-- Set up the minimal required command-line interface (CLI).  
-- Add support for parsing simple command-line arguments and options.  
-- Create a basic help system to display available commands.  
+**Completed Features:**
+- ✅ Basic CLI structure with command parsing
+- ✅ Prompt command with goals, format, and warnings
+- ✅ Non-thinking mode for direct prompts
+- ✅ Provider configuration (OpenAI, Anthropic, Ollama)
+- ✅ YAML settings customization
+- ✅ Input and output piping support
+- ✅ Session logging
 
-#### Version 1.1.0 - Core CLI Features
-**Milestones:**  
-- Enhance CLI with essential features.  
-- Improve user experience (UX) for common tasks.  
+## Next Release (Version 0.3.0)
+**Planned Features:**
+- ⬜ Interactive session management
+- ⬜ Built-in prompt templates library
+- ⬜ Enhanced logging with analytics
+- ⬜ Support for multiple personas
 
-**Tasks:**  
-- Implement command history support.  
-- Add input validation and error handling.  
-- Enable tab completion for commands and arguments.  
+## Future Releases
 
-#### Version 1.2.0 - Configuration and Setup
-**Milestones:**  
-- Allow configuration via external files or environment variables.  
-- Simplify setup process for CLI tools.  
+### Version 1.0.0 - Production Ready
+**Milestones:**
+- Full test coverage
+- Comprehensive documentation
+- Performance optimization
+- Cross-platform compatibility
 
-**Tasks:**  
-- Add support for reading configuration from JSON/YAML files.  
-- Enable overriding configuration values using command-line arguments.  
-- Provide a way to generate default configuration files.  
+**Tasks:**
+- Complete user guide with examples
+- Add unit and integration tests
+- Improve error handling and recovery
+- Optimize API request handling
 
-#### Version 1.3.0 - Plugins and Extensibility
-**Milestones:**  
-- Introduce plugin architecture.  
-- Make CLI extensible for future features.  
+### Version 1.1.0 - Advanced Features
+**Milestones:**
+- Advanced customization options
+- Improved user experience
 
-**Tasks:**  
-- Design and implement a plugin system.  
-- Add support for dynamically loading commands or extensions.  
-- Document how to create and use plugins.  
+**Tasks:**
+- Implement command history support
+- Add custom prompt template creation
+- Enable tab completion for commands
+- Add visualization for session analytics
 
+### Version 1.2.0 - Plugins and Extensions
+**Milestones:**
+- Plugin architecture for extensibility
+- Community-contributed templates
 
-#### Version 2.0.0 - Advanced Features
-**Milestones:**  
-- Introduce advanced CLI capabilities.  
-- Enhance usability for power users.  
+**Tasks:**
+- Design and implement plugin system
+- Create plugin development documentation
+- Add plugin repository integration
+- Enable community sharing of templates
 
-**Tasks:**  
-- Implement support for scripting or macros.  
-- Add progress bars and status updates for long-running tasks.  
-- Enable output formatting (e.g., JSON, CSV).  
+### Version 2.0.0 - Enterprise Features
+**Milestones:**
+- Team collaboration features
+- Enterprise-grade security
+- Advanced integrations
 
+**Tasks:**
+- Implement team sharing of templates
+- Add role-based access control
+- Create integrations with CI/CD systems
+- Enable enterprise SSO authentication
 
-#### Version 2.1.0 - Logging and Diagnostics
-**Milestones:**  
-- Improve debugging and logging capabilities.  
-- Make CLI more maintainable.  
-
-**Tasks:**  
-- Add built-in logging with different severity levels.  
-- Implement a debug mode for detailed output.  
-- Add support for capturing and saving command outputs.  
-
-
-#### Version 2.2.0 - Security Enhancements
-**Milestones:**  
-- Secure CLI interactions.  
-- Protect sensitive data.  
-
-**Tasks:**  
-- Introduce secure input methods (e.g., masked inputs).  
-- Add support for encrypted configuration files.  
-- Implement role-based access control (RBAC) if applicable.  
-
-#### Version 2.3.0 - Performance Optimization
-**Milestones:**  
-- Optimize CLI performance.  
-- Reduce latency for critical operations.  
-
-**Tasks:**  
-- Profile and optimize slow-running commands.  
-- Implement caching mechanisms where appropriate.  
-- Optimize resource usage to improve overall efficiency.  
-
-#### Version 3.0.0 - Future Features
-**Milestones:**  
-- Explore new directions for CLI evolution.  
-- Stay ahead of user needs and industry trends.  
-
-**Tasks:**  
-- Investigate AI-driven command suggestions.  
-- Add support for interactive command-line sessions.  
-- Explore integration with modern shell environments.  
-
+## Long-term Vision
+- AI-powered prompt optimization
+- Natural language command interface
+- Visual interface companion
+- Model fine-tuning integration
+- Multi-agent orchestration system

@@ -1,0 +1,40 @@
+# Example settings.yaml for Ola CLI
+# This file would be stored at ~/.ola/settings.yaml
+
+# Default model to use
+default_model: "llama3"
+
+# Prompt template customization
+prompt_template:
+  # Text displayed before each section
+  goals_prefix: "🏆 Goals: "
+  return_format_prefix: "📝 Return Format: "
+  warnings_prefix: "⚠️ Warnings: "
+
+# Default settings for commands
+defaults:
+  # Default return format when not specified
+  return_format: "text"
+  # Default to quiet mode (suppress informational output)
+  quiet: false
+  # Default to no-thinking mode (hide thinking blocks)
+  no_thinking: true
+  # Default to copying results to clipboard
+  clipboard: false
+
+# Behavior settings
+behavior:
+  # Session logging
+  log_file: "sessions.jsonl"
+  enable_logging: true
+
+  # Thinking animation customization
+  thinking_animation:
+    # Emojis to cycle through during thinking
+    emojis:
+      - "🌊"
+      - "🏄"
+      - "🌊"
+      - "🏄‍♀️"
+    # Text to display with thinking animation
+    text: "thinking..."
