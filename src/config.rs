@@ -31,8 +31,21 @@ impl Config {
         }
 
         let config_str = fs::read_to_string(&config_path)?;
-        let config = serde_json::from_str(&config_str)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        
+        // Depending on file extension, use either JSON or YAML
+        let config = if config_path.extension().and_then(|e| e.to_str()) == Some("json") {
+            serde_json::from_str(&config_str)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        } else if config_path.extension().and_then(|e| e.to_str()) == Some("yaml") || 
+                  config_path.extension().and_then(|e| e.to_str()) == Some("yml") {
+            serde_yaml::from_str(&config_str)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        } else {
+            // Default to JSON for backward compatibility
+            serde_json::from_str(&config_str)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        };
+        
         Ok(config)
     }
 
@@ -41,8 +54,20 @@ impl Config {
         let config_dir = config_path.parent().unwrap();
         fs::create_dir_all(config_dir)?;
 
-        let config_str = serde_json::to_string_pretty(self)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        // Serialize based on file extension
+        let config_str = if config_path.extension().and_then(|e| e.to_str()) == Some("json") {
+            serde_json::to_string_pretty(self)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        } else if config_path.extension().and_then(|e| e.to_str()) == Some("yaml") || 
+                  config_path.extension().and_then(|e| e.to_str()) == Some("yml") {
+            serde_yaml::to_string(self)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        } else {
+            // Default to JSON for backward compatibility
+            serde_json::to_string_pretty(self)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        };
+        
         fs::write(&config_path, config_str)?;
 
         // Set restrictive permissions on config file (600)
@@ -81,7 +106,21 @@ impl Config {
 fn get_config_path() -> Result<PathBuf, io::Error> {
     let home = std::env::var("HOME")
         .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "HOME directory not found"))?;
-    Ok(PathBuf::from(home).join(".ola").join("config.json"))
+    
+    // Check for settings.yaml first
+    let yaml_path = PathBuf::from(home.clone()).join(".ola").join("settings.yaml");
+    if yaml_path.exists() {
+        return Ok(yaml_path);
+    }
+    
+    // Backward compatibility: use config.json if it exists
+    let json_path = PathBuf::from(home).join(".ola").join("config.json");
+    if json_path.exists() {
+        return Ok(json_path);
+    }
+    
+    // Default to YAML for new installs
+    Ok(yaml_path)
 }
 
 // This function is now replaced by the implementation in main.rs

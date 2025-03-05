@@ -13,16 +13,29 @@ pub fn structure_reasoning(
     context: Option<&str>,
     no_thinking: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Try to load settings
+    let settings = crate::settings::Settings::load().unwrap_or_default();
+    
+    // Use custom prefixes from settings if available
+    let goals_prefix = &settings.prompt_template.goals_prefix;
+    let return_format_prefix = &settings.prompt_template.return_format_prefix;
+    let warnings_prefix = &settings.prompt_template.warnings_prefix;
+    
     // Build the base input data with optional context
     let mut input_data = if let Some(ctx) = context {
         format!(
-            "Goals: {}\nReturn Type: {}\nWarnings: {}\nContext: {}",
-            goals, return_type, warnings, ctx
+            "{}{}\n{}{}\n{}{}\nContext: {}",
+            goals_prefix, goals, 
+            return_format_prefix, return_type, 
+            warnings_prefix, warnings, 
+            ctx
         )
     } else {
         format!(
-            "Goals: {}\nReturn Type: {}\nWarnings: {}",
-            goals, return_type, warnings
+            "{}{}\n{}{}\n{}{}",
+            goals_prefix, goals, 
+            return_format_prefix, return_type, 
+            warnings_prefix, warnings
         )
     };
 
@@ -60,11 +73,11 @@ pub fn structure_reasoning(
         )
     })?;
 
-    // Use model from config or fallback to default
+    // Use model from config, settings, or fallback to default
     let model = provider_config
         .model
         .as_deref()
-        .unwrap_or("deepseek-r1:14b");
+        .unwrap_or(&settings.default_model);
     println!("Using model: {}", model);
 
     // Prepare the JSON payload for Ollama API
@@ -109,7 +122,8 @@ pub fn structure_reasoning(
     // Variables for filtering thinking blocks
     let mut in_thinking_block = false;
     let mut thinking_animation_counter = 0;
-    let thinking_emojis = ["🌊", "🏄", "🌊", "🏄‍♀️"];
+    let thinking_emojis = &settings.behavior.thinking_animation.emojis;
+    let thinking_text = &settings.behavior.thinking_animation.text;
     
     for line in reader.lines() {
         let line = line?;
@@ -134,7 +148,9 @@ pub fn structure_reasoning(
                 if text.contains("<think>") {
                     in_thinking_block = true;
                     // Clear current line and print thinking animation
-                    eprint!("\r\x1B[K{}  thinking...", thinking_emojis[thinking_animation_counter % thinking_emojis.len()]);
+                    eprint!("\r\x1B[K{}  {}", 
+                        &thinking_emojis[thinking_animation_counter % thinking_emojis.len()], 
+                        thinking_text);
                     std::io::stderr().flush()?;
                     thinking_animation_counter += 1;
                 } else if text.contains("</think>") {
@@ -145,7 +161,9 @@ pub fn structure_reasoning(
                 } else if in_thinking_block {
                     // For text inside thinking block, just update animation frame
                     if thinking_animation_counter % 4 == 0 {
-                        eprint!("\r\x1B[K{}  thinking...", thinking_emojis[thinking_animation_counter % thinking_emojis.len()]);
+                        eprint!("\r\x1B[K{}  {}", 
+                            &thinking_emojis[thinking_animation_counter % thinking_emojis.len()], 
+                            thinking_text);
                         std::io::stderr().flush()?;
                         thinking_animation_counter += 1;
                     }
@@ -212,6 +230,22 @@ pub fn structure_reasoning(
         eprintln!("Successfully processed response");
     }
     
+    // Log session if enabled in settings
+    if settings.behavior.enable_logging {
+        let log_entry = json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "goals": goals,
+            "return_format": return_type,
+            "warnings": warnings,
+            "model": model,
+            "output_length": full_response.len(),
+        });
+        
+        if let Err(e) = append_to_log(&settings.behavior.log_file, &log_entry.to_string()) {
+            eprintln!("Failed to log session: {}", e);
+        }
+    }
+    
     Ok(())
 }
 
@@ -221,6 +255,9 @@ pub fn stream_non_think(
     context: Option<&str>,
     filter_thinking: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Try to load settings
+    let settings = crate::settings::Settings::load().unwrap_or_default();
+    
     // Build the input data with optional context
     let mut input_data = if let Some(ctx) = context {
         format!(
@@ -263,11 +300,11 @@ pub fn stream_non_think(
         )
     })?;
 
-    // Use model from config or fallback to default
+    // Use model from config, settings, or fallback to default
     let model = provider_config
         .model
         .as_deref()
-        .unwrap_or("deepseek-r1:14b");
+        .unwrap_or(&settings.default_model);
     println!("Using model: {}", model);
 
     // Prepare the JSON payload for Ollama API
@@ -312,7 +349,8 @@ pub fn stream_non_think(
     // Variables for filtering thinking blocks
     let mut in_thinking_block = false;
     let mut thinking_animation_counter = 0;
-    let thinking_emojis = ["🌊", "🏄", "🌊", "🏄‍♀️"];
+    let thinking_emojis = &settings.behavior.thinking_animation.emojis;
+    let thinking_text = &settings.behavior.thinking_animation.text;
     
     for line in reader.lines() {
         let line = line?;
@@ -337,7 +375,9 @@ pub fn stream_non_think(
                 if text.contains("<think>") {
                     in_thinking_block = true;
                     // Clear current line and print thinking animation
-                    eprint!("\r\x1B[K{}  thinking...", thinking_emojis[thinking_animation_counter % thinking_emojis.len()]);
+                    eprint!("\r\x1B[K{}  {}", 
+                        &thinking_emojis[thinking_animation_counter % thinking_emojis.len()], 
+                        thinking_text);
                     std::io::stderr().flush()?;
                     thinking_animation_counter += 1;
                 } else if text.contains("</think>") {
@@ -348,7 +388,9 @@ pub fn stream_non_think(
                 } else if in_thinking_block {
                     // For text inside thinking block, just update animation frame
                     if thinking_animation_counter % 4 == 0 {
-                        eprint!("\r\x1B[K{}  thinking...", thinking_emojis[thinking_animation_counter % thinking_emojis.len()]);
+                        eprint!("\r\x1B[K{}  {}", 
+                            &thinking_emojis[thinking_animation_counter % thinking_emojis.len()], 
+                            thinking_text);
                         std::io::stderr().flush()?;
                         thinking_animation_counter += 1;
                     }
@@ -417,5 +459,28 @@ pub fn stream_non_think(
         eprintln!("Successfully processed response");
     }
     
+    // Log session if enabled in settings
+    if settings.behavior.enable_logging {
+        let log_entry = json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "prompt": prompt,
+            "model": model,
+            "output_length": full_response.len(),
+        });
+        
+        if let Err(e) = append_to_log(&settings.behavior.log_file, &log_entry.to_string()) {
+            eprintln!("Failed to log session: {}", e);
+        }
+    }
+    
+    Ok(())
+}
+
+fn append_to_log(filename: &str, entry: &str) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(filename)?;
+    writeln!(file, "{}", entry)?;
     Ok(())
 }

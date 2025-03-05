@@ -14,6 +14,7 @@ use std::io::Write;
 
 mod config;
 mod prompt;
+mod settings;
 
 #[derive(Parser)]
 #[command(name = "ola")]
@@ -116,6 +117,27 @@ enum Commands {
         #[arg(short = 'f', long)]
         filter_thinking: bool,
     },
+    /// View or modify application settings
+    Settings {
+        /// Optional: View current settings
+        #[arg(short, long)]
+        view: bool,
+        /// Optional: Set default model
+        #[arg(long)]
+        default_model: Option<String>,
+        /// Optional: Set default return format
+        #[arg(long)]
+        default_format: Option<String>,
+        /// Optional: Enable or disable logging
+        #[arg(long)]
+        logging: Option<bool>,
+        /// Optional: Set log file location
+        #[arg(long)]
+        log_file: Option<String>,
+        /// Optional: Reset settings to default values
+        #[arg(short, long)]
+        reset: bool,
+    },
 }
 
 fn main() {
@@ -138,6 +160,9 @@ fn main() {
         Some(Commands::Models { provider, quiet }) => {
             // Handle the Models subcommand
             list_models(provider.clone(), *quiet);
+        }
+        Some(Commands::Settings { view, default_model, default_format, logging, log_file, reset }) => {
+            manage_settings(*view, default_model.clone(), default_format.clone(), *logging, log_file.clone(), *reset);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -539,6 +564,85 @@ fn append_to_log(filename: &str, entry: &str) -> std::io::Result<()> {
         .open(filename)?;
     writeln!(file, "{}", entry)?;
     Ok(())
+}
+
+/// Manage application settings
+fn manage_settings(
+    view: bool, 
+    default_model: Option<String>, 
+    default_format: Option<String>,
+    logging: Option<bool>,
+    log_file: Option<String>,
+    reset: bool
+) {
+    // Try to load existing settings
+    let mut settings = match settings::Settings::load() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to load settings: {}", e);
+            if reset || default_model.is_some() || default_format.is_some() || 
+               logging.is_some() || log_file.is_some() {
+                // Create default settings if we need to modify them
+                settings::Settings::default()
+            } else {
+                // Just exit if we're only trying to view
+                std::process::exit(1);
+            }
+        }
+    };
+    
+    // Reset settings if requested
+    if reset {
+        settings = settings::Settings::default();
+        println!("Settings reset to default values");
+    }
+    
+    // Update settings with provided values
+    if let Some(ref model) = default_model {
+        settings.default_model = model.clone();
+        println!("Default model set to: {}", settings.default_model);
+    }
+    
+    if let Some(ref format) = default_format {
+        settings.defaults.return_format = format.clone();
+        println!("Default return format set to: {}", settings.defaults.return_format);
+    }
+    
+    if let Some(enable_logging) = logging {
+        settings.behavior.enable_logging = enable_logging;
+        println!("Logging is now {}", if enable_logging { "enabled" } else { "disabled" });
+    }
+    
+    if let Some(ref file) = log_file {
+        settings.behavior.log_file = file.clone();
+        println!("Log file set to: {}", settings.behavior.log_file);
+    }
+    
+    // Save settings if any changes were made
+    if reset || default_model.is_some() || default_format.is_some() || 
+       logging.is_some() || log_file.is_some() {
+        if let Err(e) = settings.save() {
+            eprintln!("Failed to save settings: {}", e);
+            std::process::exit(1);
+        } else {
+            println!("Settings saved successfully to: ~/.ola/settings.yaml");
+        }
+    }
+    
+    // View settings if requested or if no other options were provided
+    if view || (!reset && default_model.is_none() && default_format.is_none() && 
+        logging.is_none() && log_file.is_none()) {
+        // Convert settings to YAML for display
+        match serde_yaml::to_string(&settings) {
+            Ok(yaml) => {
+                println!("Current settings:\n{}", yaml);
+            },
+            Err(e) => {
+                eprintln!("Failed to serialize settings: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
 /// List available models for the specified provider

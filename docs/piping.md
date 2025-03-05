@@ -4,6 +4,27 @@
 
 Ola supports Unix-style piping for both input and output, allowing you to integrate it with other command-line tools. This guide explains how to use these features.
 
+## Settings Configuration
+
+You can configure default behavior for piping in the Ola settings file:
+
+```yaml
+# In ~/.ola/settings.yaml
+defaults:
+  quiet: true  # Always suppress informational output
+  clipboard: false  # Don't copy to clipboard by default
+```
+
+To view or modify settings:
+
+```bash
+# View all settings
+ola settings --view
+
+# Set default behavior
+ola settings --default-format "json"
+```
+
 ## Input Piping
 
 You can pipe text from other commands or files directly into Ola, which will use the piped content as input for reasoning.
