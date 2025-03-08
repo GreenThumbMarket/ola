@@ -61,3 +61,15 @@ Ola supports piping input and output:
 ```bash
 cat input.txt | ola prompt -g "Summarize this text" -f "bullet points" -p
 ```
+
+### Recursion
+Ola now supports recursive functionality:
+```bash
+# Run with 3 recursive waves
+ola prompt -g "Your prompt here" -r 3
+
+# Each recursive wave will execute the same command
+# with visual indicators for the current wave level
+```
+
+The `-r` flag accepts a number between 1-10, indicating the number of recursive waves to execute. Each wave is tracked with a unique color identifier.

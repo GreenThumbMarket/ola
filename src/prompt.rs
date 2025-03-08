@@ -232,7 +232,11 @@ pub fn structure_reasoning(
     
     // Log session if enabled in settings
     if settings.behavior.enable_logging {
-        let log_entry = json!({
+        // Get recursion wave number if present
+        let wave_number = std::env::var("OLA_RECURSION_WAVE").ok().and_then(|s| s.parse::<u8>().ok());
+        
+        // Build log entry with optional recursion information
+        let mut log_entry = json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "goals": goals,
             "return_format": return_type,
@@ -240,6 +244,11 @@ pub fn structure_reasoning(
             "model": model,
             "output_length": full_response.len(),
         });
+        
+        // Add recursion wave info if available
+        if let Some(wave) = wave_number {
+            log_entry["recursion_wave"] = json!(wave);
+        }
         
         if let Err(e) = append_to_log(&settings.behavior.log_file, &log_entry.to_string()) {
             eprintln!("Failed to log session: {}", e);
@@ -461,12 +470,21 @@ pub fn stream_non_think(
     
     // Log session if enabled in settings
     if settings.behavior.enable_logging {
-        let log_entry = json!({
+        // Get recursion wave number if present
+        let wave_number = std::env::var("OLA_RECURSION_WAVE").ok().and_then(|s| s.parse::<u8>().ok());
+        
+        // Build log entry with optional recursion information
+        let mut log_entry = json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "prompt": prompt,
             "model": model,
             "output_length": full_response.len(),
         });
+        
+        // Add recursion wave info if available
+        if let Some(wave) = wave_number {
+            log_entry["recursion_wave"] = json!(wave);
+        }
         
         if let Err(e) = append_to_log(&settings.behavior.log_file, &log_entry.to_string()) {
             eprintln!("Failed to log session: {}", e);

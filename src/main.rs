@@ -58,6 +58,9 @@ enum Commands {
         /// Hide thinking blocks (<think> </think>) and show an animation instead
         #[arg(short = 't', long)]
         no_thinking: bool,
+        /// Enable recursion with specified number of waves (1-10)
+        #[arg(short = 'r', long, value_parser = clap::value_parser!(u8).range(1..=10))]
+        recursion: Option<u8>,
     },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
@@ -151,8 +154,8 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking }) => {
-            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking);
+        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking, recursion }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking, *recursion);
         }
         Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking }) => {
             run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking);
@@ -415,11 +418,34 @@ fn read_from_stdin() -> String {
     }
 }
 
-fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool) {
-    if !quiet {
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, recursion: Option<u8>) {
+    // Track recursion wave number (defaults to 0 for non-recursive operations)
+    let wave_number = std::env::var("OLA_RECURSION_WAVE").ok().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
+    
+    // Log the current recursion wave if recursion is enabled
+    if wave_number > 0 && !quiet {
+        // Define colors for different waves
+        let wave_colors = [
+            "\x1b[31m", // red
+            "\x1b[33m", // yellow
+            "\x1b[32m", // green
+            "\x1b[36m", // cyan
+            "\x1b[34m", // blue
+            "\x1b[35m", // magenta
+            "\x1b[91m", // bright red
+            "\x1b[93m", // bright yellow
+            "\x1b[92m", // bright green
+            "\x1b[96m", // bright cyan
+        ];
+        
+        let color = wave_colors[(wave_number as usize - 1) % wave_colors.len()];
+        let reset = "\x1b[0m";
+        
+        eprintln!("{}[RECURSION WAVE {}]{}  Processing...", color, wave_number, reset);
+    } else if !quiet {
         eprintln!("Welcome to the Ola CLI Prompt!");
     }
-
+    
     // Read from stdin if pipe mode is enabled
     let piped_content = if pipe {
         read_from_stdin()
@@ -431,8 +457,8 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     let cli_goals_provided = cli_goals.is_some();
     
     // Get goals from CLI args or prompt user
-    let goals = if let Some(g) = cli_goals {
-        g
+    let goals = if let Some(ref g) = cli_goals {
+        g.clone()
     } else if !piped_content.is_empty() {
         // Use piped content as goals if no explicit goals were provided
         piped_content.clone()
@@ -493,6 +519,66 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         Ok(()) => {
             if !quiet {
                 eprintln!("Prompt executed successfully");
+            }
+            
+            // Handle recursion if enabled and we haven't reached the limit
+            if let Some(max_waves) = recursion {
+                if wave_number < max_waves {
+                    // Prepare to launch the next recursion wave
+                    let next_wave = wave_number + 1;
+                    
+                    if !quiet {
+                        eprintln!("Launching recursion wave {}...", next_wave);
+                    }
+                    
+                    // Build the command to execute the next wave
+                    let current_exe = std::env::current_exe().expect("Failed to get current executable path");
+                    
+                    // Create a new Command instance using the current executable
+                    let mut cmd = std::process::Command::new(current_exe);
+                    
+                    // Set the OLA_RECURSION_WAVE environment variable for the child process
+                    cmd.env("OLA_RECURSION_WAVE", next_wave.to_string());
+                    
+                    // Add the "prompt" subcommand
+                    cmd.arg("prompt");
+                    
+                    // Add all the original arguments
+                    if let Some(g) = &cli_goals {
+                        cmd.args(["--goals", g]);
+                    }
+                    cmd.args(["--format", cli_format]);
+                    if !cli_warnings.is_empty() {
+                        cmd.args(["--warnings", cli_warnings]);
+                    }
+                    if clipboard {
+                        cmd.arg("--clipboard");
+                    }
+                    if quiet {
+                        cmd.arg("--quiet");
+                    }
+                    if pipe {
+                        cmd.arg("--pipe");
+                    }
+                    if no_thinking {
+                        cmd.arg("--no-thinking");
+                    }
+                    cmd.args(["--recursion", &max_waves.to_string()]);
+                    
+                    // Execute the command
+                    match cmd.status() {
+                        Ok(status) => {
+                            if !status.success() {
+                                eprintln!("Recursion wave {} failed with status: {}", next_wave, status);
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to launch recursion wave {}: {}", next_wave, e);
+                        }
+                    }
+                } else if !quiet {
+                    eprintln!("Reached maximum recursion depth ({} waves)", max_waves);
+                }
             }
         },
         Err(e) => eprintln!("Prompt returned error: {:?}", e),
