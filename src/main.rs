@@ -424,18 +424,18 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     
     // Log the current recursion wave if recursion is enabled
     if wave_number > 0 && !quiet {
-        // Define colors for different waves
+        // Define ocean-themed colors for different waves
         let wave_colors = [
-            "\x1b[31m", // red
-            "\x1b[33m", // yellow
-            "\x1b[32m", // green
-            "\x1b[36m", // cyan
-            "\x1b[34m", // blue
-            "\x1b[35m", // magenta
-            "\x1b[91m", // bright red
-            "\x1b[93m", // bright yellow
-            "\x1b[92m", // bright green
-            "\x1b[96m", // bright cyan
+            "\x1b[34m",  // blue
+            "\x1b[36m",  // cyan
+            "\x1b[96m",  // bright cyan
+            "\x1b[94m",  // bright blue
+            "\x1b[38;5;39m",  // deep sky blue
+            "\x1b[38;5;45m",  // turquoise
+            "\x1b[38;5;23m",  // sea green
+            "\x1b[38;5;24m",  // deep turquoise
+            "\x1b[38;5;31m",  // medium blue
+            "\x1b[38;5;37m",  // teal
         ];
         
         let color = wave_colors[(wave_number as usize - 1) % wave_colors.len()];
