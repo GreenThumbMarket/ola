@@ -12,9 +12,16 @@ use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write;
 
+// Core modules
 mod config;
 mod prompt;
 mod settings;
+
+// API communication layer
+mod api;
+
+// Utility modules
+mod utils;
 
 #[derive(Parser)]
 #[command(name = "ola")]
@@ -402,20 +409,7 @@ fn main() {
 }
 
 fn read_from_stdin() -> String {
-    use std::io::{self, Read};
-    
-    // Check if stdin has data available
-    let stdin = io::stdin();
-    let mut handle = stdin.lock();
-    
-    let mut buffer = String::new();
-    match handle.read_to_string(&mut buffer) {
-        Ok(_) => buffer,
-        Err(e) => {
-            eprintln!("Error reading from stdin: {}", e);
-            String::new()
-        }
-    }
+    utils::piping::read_from_stdin()
 }
 
 fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, recursion: Option<u8>) {
