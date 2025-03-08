@@ -31,3 +31,15 @@ chrono = "0.4.39"
 
 # Regex for pattern matching
 regex = "1"
+
+# Terminal utilities
+atty = "0.2"         # Detect if stdin/stdout is a terminal
+indicatif = "0.17"   # Progress indicators
+
+[dev-dependencies]
+# Test dependencies
+assert_cmd = "2.0"      # For testing CLI applications
+predicates = "3.0"      # For making assertions about command output
+tempfile = "3.8"        # For creating temporary files/directories
+mockito = "1.2"         # For mocking HTTP requests
+test-case = "3.3"       # For parameterized tests
