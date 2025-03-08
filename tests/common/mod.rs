@@ -1,4 +1,4 @@
-use mockito::{mock, Matcher, Mock};
+use mockito::{Mock, Server};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
@@ -8,7 +8,8 @@ use tempfile::{tempdir, TempDir};
 
 /// Create a mock for OpenAI API
 pub fn mock_openai_api() -> Mock {
-    mock("POST", "/v1/chat/completions")
+    let mut server = Server::new();
+    server.mock("POST", "/v1/chat/completions")
         .with_header("content-type", "application/json")
         .with_body(r#"{
             "id": "chatcmpl-123",
@@ -24,12 +25,12 @@ pub fn mock_openai_api() -> Mock {
                 "finish_reason": "stop"
             }]
         }"#)
-        .create()
 }
 
 /// Create a mock for Anthropic API
 pub fn mock_anthropic_api() -> Mock {
-    mock("POST", "/v1/messages")
+    let mut server = Server::new();
+    server.mock("POST", "/v1/messages")
         .with_header("content-type", "application/json")
         .with_body(r#"{
             "id": "msg_1234567890",
@@ -44,18 +45,17 @@ pub fn mock_anthropic_api() -> Mock {
             "model": "claude-3-sonnet-20240229",
             "stop_reason": "end_turn"
         }"#)
-        .create()
 }
 
 /// Create a mock for Ollama API
 pub fn mock_ollama_api() -> Mock {
-    mock("POST", "/api/generate")
+    let mut server = Server::new();
+    server.mock("POST", "/api/generate")
         .with_header("content-type", "application/json")
         .with_body(r#"{
             "model": "llama2",
             "response": "This is a mocked response from the Ollama API."
         }"#)
-        .create()
 }
 
 /// Create a temporary config directory with provider configuration
@@ -66,6 +66,8 @@ pub fn setup_temp_config(provider: &str) -> TempDir {
     
     // Create config file based on provider
     let config_file = config_dir.join("config.yaml");
+    let mut server = Server::new();
+    let server_url = server.url();
     let config_content = match provider {
         "OpenAI" => format!(r#"
 active_provider: "OpenAI"
@@ -75,7 +77,7 @@ providers:
     model: "gpt-4"
     additional_settings:
       base_url: "{}"
-"#, mockito::server_url()),
+"#, server_url),
         "Anthropic" => format!(r#"
 active_provider: "Anthropic"
 providers:
@@ -84,7 +86,7 @@ providers:
     model: "claude-3-sonnet-20240229"
     additional_settings:
       base_url: "{}"
-"#, mockito::server_url()),
+"#, server_url),
         "Ollama" => format!(r#"
 active_provider: "Ollama"
 providers:
@@ -93,7 +95,7 @@ providers:
     model: "llama2"
     additional_settings:
       base_url: "{}"
-"#, mockito::server_url()),
+"#, server_url),
         _ => panic!("Unsupported provider: {}", provider),
     };
     

@@ -219,7 +219,7 @@ fn log_session(
 }
 
 // Testing functions
-#[cfg(test)]
+// Test version of structure_reasoning
 pub fn structure_reasoning_test(
     goals: &str,
     return_type: &str,
@@ -267,7 +267,7 @@ pub fn structure_reasoning_test(
     })
 }
 
-#[cfg(test)]
+// Test version of stream_non_think
 pub fn stream_non_think_test(
     prompt: &str,
     clipboard: bool,
