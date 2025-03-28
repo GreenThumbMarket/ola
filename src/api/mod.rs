@@ -6,11 +6,13 @@ use std::time::Duration;
 mod openai;
 mod anthropic;
 mod ollama;
+mod gemini;
 
 // Provider implementations
 pub use openai::OpenAI;
 pub use anthropic::Anthropic;
 pub use ollama::Ollama;
+pub use gemini::Gemini;
 
 // Trait for API providers
 pub trait Provider {
@@ -30,6 +32,7 @@ impl ApiClient {
             "OpenAI" => Box::new(OpenAI::new(api_key, base_url)),
             "Anthropic" => Box::new(Anthropic::new(api_key, base_url)),
             "Ollama" => Box::new(Ollama::new(base_url)),
+            "Gemini" => Box::new(Gemini::new(api_key, base_url)),
             _ => return Err(format!("Unsupported provider: {}", provider_name).into()),
         };
         
