@@ -36,6 +36,9 @@ regex = "1"
 atty = "0.2"         # Detect if stdin/stdout is a terminal
 indicatif = "0.17"   # Progress indicators
 
+# Temporary file handling (for NeoVim integration)
+tempfile = "3.8"
+
 [dev-dependencies]
 # Test dependencies
 assert_cmd = "2.0"      # For testing CLI applications

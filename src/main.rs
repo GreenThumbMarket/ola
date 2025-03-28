@@ -68,6 +68,12 @@ enum Commands {
         /// Enable recursion with specified number of waves (1-10)
         #[arg(short = 'r', long, value_parser = clap::value_parser!(u8).range(1..=10))]
         recursion: Option<u8>,
+        /// Open the LLM response in NeoVim for editing
+        #[arg(short = 'n', long)]
+        nvim: bool,
+        /// Disable NeoVim integration for this prompt
+        #[arg(long)]
+        no_nvim: bool,
     },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
@@ -126,6 +132,12 @@ enum Commands {
         /// Filter out thinking blocks and show an animation instead
         #[arg(short = 'f', long)]
         filter_thinking: bool,
+        /// Open the LLM response in NeoVim for editing
+        #[arg(short = 'n', long)]
+        nvim: bool,
+        /// Disable NeoVim integration for this prompt
+        #[arg(long)]
+        no_nvim: bool,
     },
     /// View or modify application settings
     Settings {
@@ -144,6 +156,12 @@ enum Commands {
         /// Optional: Set log file location
         #[arg(long)]
         log_file: Option<String>,
+        /// Optional: Enable or disable NeoVim integration
+        #[arg(long)]
+        nvim: Option<bool>,
+        /// Optional: Set NeoVim executable path
+        #[arg(long)]
+        nvim_path: Option<String>,
         /// Optional: Reset settings to default values
         #[arg(short, long)]
         reset: bool,
@@ -161,18 +179,18 @@ fn main() {
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking, recursion }) => {
-            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking, *recursion);
+        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking, recursion, nvim, no_nvim }) => {
+            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking, *recursion, *nvim, *no_nvim);
         }
-        Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking }) => {
-            run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking);
+        Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking, nvim, no_nvim }) => {
+            run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking, *nvim, *no_nvim);
         }
         Some(Commands::Models { provider, quiet }) => {
             // Handle the Models subcommand
             list_models(provider.clone(), *quiet);
         }
-        Some(Commands::Settings { view, default_model, default_format, logging, log_file, reset }) => {
-            manage_settings(*view, default_model.clone(), default_format.clone(), *logging, log_file.clone(), *reset);
+        Some(Commands::Settings { view, default_model, default_format, logging, log_file, nvim, nvim_path, reset }) => {
+            manage_settings(*view, default_model.clone(), default_format.clone(), *logging, log_file.clone(), nvim.clone(), nvim_path.clone(), *reset);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -435,7 +453,7 @@ fn read_from_stdin() -> String {
     utils::piping::read_from_stdin()
 }
 
-fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, recursion: Option<u8>) {
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, recursion: Option<u8>, nvim: bool, no_nvim: bool) {
     // Track recursion wave number (defaults to 0 for non-recursive operations)
     let wave_number = std::env::var("OLA_RECURSION_WAVE").ok().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
     
@@ -518,8 +536,8 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
 
     // Call the prompt function from the ola crate with context
     let output = match &context {
-        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx), no_thinking),
-        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None, no_thinking),
+        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx), no_thinking, nvim, no_nvim),
+        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None, no_thinking, nvim, no_nvim),
     };
 
     if !quiet {
@@ -580,6 +598,12 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
                     if no_thinking {
                         cmd.arg("--no-thinking");
                     }
+                    if nvim {
+                        cmd.arg("--nvim");
+                    }
+                    if no_nvim {
+                        cmd.arg("--no-nvim");
+                    }
                     cmd.args(["--recursion", &max_waves.to_string()]);
                     
                     // Execute the command
@@ -602,7 +626,7 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     }
 }
 
-fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe: bool, filter_thinking: bool) {
+fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe: bool, filter_thinking: bool, nvim: bool, no_nvim: bool) {
     if !quiet {
         eprintln!("Running direct prompt without thinking steps...");
     }
@@ -640,8 +664,8 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
 
     // Call the new function from the prompt module
     let output = match &context {
-        Some(ctx) => prompt::stream_non_think(&final_prompt, clipboard, Some(ctx), filter_thinking),
-        None => prompt::stream_non_think(&final_prompt, clipboard, None, filter_thinking),
+        Some(ctx) => prompt::stream_non_think(&final_prompt, clipboard, Some(ctx), filter_thinking, nvim, no_nvim),
+        None => prompt::stream_non_think(&final_prompt, clipboard, None, filter_thinking, nvim, no_nvim),
     };
 
     if !quiet {
@@ -676,6 +700,8 @@ fn manage_settings(
     default_format: Option<String>,
     logging: Option<bool>,
     log_file: Option<String>,
+    nvim: Option<bool>,
+    nvim_path: Option<String>,
     reset: bool
 ) {
     // Try to load existing settings
@@ -684,7 +710,7 @@ fn manage_settings(
         Err(e) => {
             eprintln!("Failed to load settings: {}", e);
             if reset || default_model.is_some() || default_format.is_some() || 
-               logging.is_some() || log_file.is_some() {
+               logging.is_some() || log_file.is_some() || nvim.is_some() || nvim_path.is_some() {
                 // Create default settings if we need to modify them
                 settings::Settings::default()
             } else {
@@ -721,9 +747,20 @@ fn manage_settings(
         println!("Log file set to: {}", settings.behavior.log_file);
     }
     
+    // Update NeoVim settings if provided
+    if let Some(enable_nvim) = nvim {
+        settings.behavior.nvim.enabled = enable_nvim;
+        println!("NeoVim integration is now {}", if enable_nvim { "enabled" } else { "disabled" });
+    }
+    
+    if let Some(ref path) = nvim_path {
+        settings.behavior.nvim.path = path.clone();
+        println!("NeoVim path set to: {}", settings.behavior.nvim.path);
+    }
+    
     // Save settings if any changes were made
     if reset || default_model.is_some() || default_format.is_some() || 
-       logging.is_some() || log_file.is_some() {
+       logging.is_some() || log_file.is_some() || nvim.is_some() || nvim_path.is_some() {
         if let Err(e) = settings.save() {
             eprintln!("Failed to save settings: {}", e);
             std::process::exit(1);
@@ -734,7 +771,7 @@ fn manage_settings(
     
     // View settings if requested or if no other options were provided
     if view || (!reset && default_model.is_none() && default_format.is_none() && 
-        logging.is_none() && log_file.is_none()) {
+        logging.is_none() && log_file.is_none() && nvim.is_none() && nvim_path.is_none()) {
         // Convert settings to YAML for display
         match serde_yaml::to_string(&settings) {
             Ok(yaml) => {

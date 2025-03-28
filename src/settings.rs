@@ -73,6 +73,10 @@ pub struct BehaviorSettings {
     /// Thinking animation customization
     #[serde(default)]
     pub thinking_animation: ThinkingAnimation,
+    
+    /// NeoVim integration settings
+    #[serde(default)]
+    pub nvim: NeoVimSettings,
 }
 
 /// Settings for thinking animation
@@ -85,6 +89,32 @@ pub struct ThinkingAnimation {
     /// Text to display with the thinking animation
     #[serde(default = "default_thinking_text")]
     pub text: String,
+}
+
+/// NeoVim integration settings
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NeoVimSettings {
+    /// Enable or disable NeoVim integration
+    #[serde(default = "default_nvim_enabled")]
+    pub enabled: bool,
+    
+    /// Path to NeoVim executable
+    #[serde(default = "default_nvim_path")]
+    pub path: String,
+    
+    /// Additional arguments to pass to NeoVim
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+impl Default for NeoVimSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_nvim_enabled(),
+            path: default_nvim_path(),
+            args: Vec::new(),
+        }
+    }
 }
 
 // Default implementations
@@ -114,6 +144,14 @@ fn default_log_file() -> String {
 
 fn default_enable_logging() -> bool {
     true
+}
+
+fn default_nvim_enabled() -> bool {
+    false
+}
+
+fn default_nvim_path() -> String {
+    "nvim".to_string()
 }
 
 fn default_thinking_emojis() -> Vec<String> {

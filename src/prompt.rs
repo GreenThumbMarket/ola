@@ -24,6 +24,8 @@ pub fn structure_reasoning(
     clipboard: bool,
     context: Option<&str>,
     no_thinking: bool,
+    nvim: bool,
+    no_nvim: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Try to load settings
     let settings = crate::settings::Settings::load().unwrap_or_default();
@@ -68,6 +70,23 @@ pub fn structure_reasoning(
         log_session(goals, return_type, warnings, model, &response)?;
     }
     
+    // Handle NeoVim integration
+    if crate::utils::nvim::should_use_nvim(nvim, no_nvim) {
+        // Get NeoVim path from settings
+        let nvim_path = settings.behavior.nvim.path.clone();
+        
+        // Check if NeoVim is available
+        if crate::utils::nvim::is_nvim_available(&nvim_path) {
+            output::print_success("Opening response in NeoVim...");
+            match crate::utils::nvim::open_in_nvim(&response, &nvim_path, &settings.behavior.nvim.args) {
+                Ok(_) => output::print_success("NeoVim session completed"),
+                Err(e) => output::print_error(&format!("Failed to open in NeoVim: {}", e))
+            }
+        } else {
+            output::print_error(&format!("NeoVim not found at path: {}. Please install NeoVim or update the path in settings.", nvim_path));
+        }
+    }
+    
     Ok(())
 }
 
@@ -77,6 +96,8 @@ pub fn stream_non_think(
     clipboard: bool,
     context: Option<&str>,
     filter_thinking: bool,
+    nvim: bool,
+    no_nvim: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Try to load settings
     let settings = crate::settings::Settings::load().unwrap_or_default();
@@ -131,6 +152,23 @@ pub fn stream_non_think(
         
         if let Err(e) = piping::append_to_log(&settings.behavior.log_file, &log_entry.to_string()) {
             eprintln!("Failed to log session: {}", e);
+        }
+    }
+    
+    // Handle NeoVim integration
+    if crate::utils::nvim::should_use_nvim(nvim, no_nvim) {
+        // Get NeoVim path from settings
+        let nvim_path = settings.behavior.nvim.path.clone();
+        
+        // Check if NeoVim is available
+        if crate::utils::nvim::is_nvim_available(&nvim_path) {
+            output::print_success("Opening response in NeoVim...");
+            match crate::utils::nvim::open_in_nvim(&response, &nvim_path, &settings.behavior.nvim.args) {
+                Ok(_) => output::print_success("NeoVim session completed"),
+                Err(e) => output::print_error(&format!("Failed to open in NeoVim: {}", e))
+            }
+        } else {
+            output::print_error(&format!("NeoVim not found at path: {}. Please install NeoVim or update the path in settings.", nvim_path));
         }
     }
     
