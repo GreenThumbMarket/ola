@@ -186,7 +186,7 @@ fn main() {
             let provider_name = if let Some(p) = cli_provider.clone() {
                 p
             } else {
-                let providers = vec!["OpenAI", "Anthropic", "Ollama"];
+                let providers = vec!["OpenAI", "Anthropic", "Ollama", "Gemini"];
                 let selected_idx = Select::with_theme(&ColorfulTheme::default())
                     .with_prompt("Provider")
                     .items(&providers)
@@ -204,6 +204,14 @@ fn main() {
                     "Ollama" => {
                         println!("No API key needed for Ollama (using local instance)");
                         String::new()
+                    }
+                    "Gemini" => {
+                        // Use Password input for secure API key entry
+                        println!("For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)");
+                        dialoguer::Password::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Google API Key")
+                            .interact()
+                            .unwrap()
                     }
                     _ => {
                         // Use Password input for secure API key entry
@@ -237,6 +245,21 @@ fn main() {
                             "claude-3-haiku-20240307",
                             "claude-2.1",
                             "claude-2.0",
+                        ];
+                        let idx = Select::with_theme(&ColorfulTheme::default())
+                            .with_prompt("Model")
+                            .items(&models)
+                            .default(0)
+                            .interact()
+                            .unwrap();
+                        Some(models[idx].to_string())
+                    }
+                    "Gemini" => {
+                        let models = vec![
+                            "gemini-1.5-pro",
+                            "gemini-1.5-flash",
+                            "gemini-1.0-pro",
+                            "gemini-1.0-pro-vision",
                         ];
                         let idx = Select::with_theme(&ColorfulTheme::default())
                             .with_prompt("Model")
@@ -793,6 +816,20 @@ fn list_models(provider: Option<String>, quiet: bool) {
                 println!("gpt-4-turbo");
                 println!("gpt-4");
                 println!("gpt-3.5-turbo");
+            }
+        },
+        "Gemini" => {
+            if !quiet {
+                println!("Google Gemini models:");
+                println!("  1. gemini-1.5-pro");
+                println!("  2. gemini-1.5-flash");
+                println!("  3. gemini-1.0-pro");
+                println!("  4. gemini-1.0-pro-vision");
+            } else {
+                println!("gemini-1.5-pro");
+                println!("gemini-1.5-flash");
+                println!("gemini-1.0-pro");
+                println!("gemini-1.0-pro-vision");
             }
         },
         "Anthropic" => {

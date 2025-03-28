@@ -251,6 +251,24 @@ pub fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
                 return Err("Anthropic requires a model name".to_string());
             }
         }
+        "Gemini" => {
+            // Validate API key format and presence
+            if config.api_key.trim().is_empty() {
+                return Err("API key cannot be empty".to_string());
+            }
+
+            // Check model name is provided
+            if config.model.is_none() {
+                return Err("Gemini requires a model name".to_string());
+            }
+            
+            // Check if model is valid
+            if let Some(model) = &config.model {
+                if !model.starts_with("gemini-") {
+                    return Err("Gemini model name should start with 'gemini-'".to_string());
+                }
+            }
+        }
         "Ollama" => {
             // For Ollama, API key can be empty (local service)
 
