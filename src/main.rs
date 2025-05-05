@@ -148,6 +148,18 @@ enum Commands {
         #[arg(short, long)]
         reset: bool,
     },
+    /// Generate a shell command from a natural language instruction
+    Shell {
+        /// Natural language instruction to translate into a shell command
+        #[arg(required = true)]
+        instruction: String,
+        /// Run the generated command
+        #[arg(short, long)]
+        run: bool,
+        /// Edit the generated command before running
+        #[arg(short, long)]
+        edit: bool,
+    },
 }
 
 fn main() {
@@ -374,6 +386,47 @@ fn main() {
             );
             if let Some(model) = provider_config.model {
                 println!("Using model: {}", model);
+            }
+        }
+        // Generate a shell command from natural language
+        Some(Commands::Shell { instruction, run, edit }) => {
+            // Use the provided instruction text
+            let instruction_text = instruction.clone();
+            // Prompt LLM to translate instruction into a shell command
+            let prompt_text = format!(
+                "Translate the following natural language instruction into a shell command. Only output the command without explanation.\nInstruction: {}",
+                instruction_text
+            );
+            // Load settings and config to select model
+            let settings = settings::Settings::load().unwrap_or_default();
+            let config = config::Config::load().unwrap();
+            let provider_cfg = config.get_active_provider()
+                .expect("No active provider configured. Run 'ola configure' first.");
+            let model = provider_cfg.model.as_deref().unwrap_or(&settings.default_model);
+            // Create API client and get generated command
+            let api_client = api::create_api_client_from_config().unwrap();
+            let response = api_client.send_prompt(&prompt_text, model).unwrap();
+            let mut command = response.trim().to_string();
+            // Allow editing the command if requested
+            if *edit {
+                command = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Edit command")
+                    .default(command)
+                    .interact_text()
+                    .unwrap();
+            }
+            // Output the final command
+            println!("{}", command);
+            // Execute the command if requested
+            if *run {
+                let status = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(&command)
+                    .status()
+                    .expect("Failed to execute command");
+                if !status.success() {
+                    eprintln!("Command exited with status: {}", status);
+                }
             }
         }
         Some(Commands::Session {
