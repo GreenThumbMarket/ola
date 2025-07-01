@@ -26,8 +26,35 @@ mod utils;
 #[derive(Parser)]
 #[command(name = "ola")]
 #[command(version = "0.2.0")]
-#[command(about = "A friendly CLI for prompting and optimizing reasoning model calls", long_about = None)]
+#[command(about = "A friendly CLI for prompting and optimizing reasoning model calls. Use without subcommand for default prompt behavior.", long_about = None)]
 struct OlaCli {
+    /// Optional: specify goals (when no subcommand provided)
+    #[arg(short = 'g', long)]
+    goals: Option<String>,
+    /// Optional: specify format (defaults to "text")
+    #[arg(short = 'f', long, default_value = "text")]
+    format: Option<String>,
+    /// Optional: specify warnings (defaults to empty string)
+    #[arg(short, long, default_value = "")]
+    warnings: Option<String>,
+    /// Optional: copy output to clipboard (defaults to false)
+    #[arg(short = 'c', long)]
+    clipboard: bool,
+    /// Optional: suppress informational output for cleaner piping
+    #[arg(short = 'q', long)]
+    quiet: bool,
+    /// Optional: read input from stdin (pipe) instead of interactive prompt
+    #[arg(short = 'p', long)]
+    pipe: bool,
+    /// Hide thinking blocks (<think> </think>) and show an animation instead
+    #[arg(short = 't', long)]
+    no_thinking: bool,
+    /// Enable recursion with specified number of waves (1-10)
+    #[arg(short = 'r', long, value_parser = clap::value_parser!(u8).range(1..=10))]
+    recursion: Option<u8>,
+    /// Enable interactive iteration mode with user feedback between iterations (1-10)
+    #[arg(short = 'i', long, value_parser = clap::value_parser!(u8).range(1..=10))]
+    iterations: Option<u8>,
     /// Specify a subcommand
     #[command(subcommand)]
     command: Option<Commands>,
@@ -68,6 +95,9 @@ enum Commands {
         /// Enable recursion with specified number of waves (1-10)
         #[arg(short = 'r', long, value_parser = clap::value_parser!(u8).range(1..=10))]
         recursion: Option<u8>,
+        /// Enable interactive iteration mode with user feedback between iterations (1-10)
+        #[arg(short = 'i', long, value_parser = clap::value_parser!(u8).range(1..=10))]
+        iterations: Option<u8>,
     },
     /// Demonstrates a friendly user prompt via dialoguer
     /// Configure LLM provider settings
@@ -153,16 +183,32 @@ enum Commands {
 fn main() {
     let cli = OlaCli::parse();
 
+    // If no subcommand is provided, use the default prompt behavior
     match &cli.command {
+        None => {
+            // Default to prompt command with CLI args
+            run_prompt(
+                cli.goals.clone(),
+                &cli.format.unwrap_or_else(|| "text".to_string()),
+                &cli.warnings.unwrap_or_else(|| "".to_string()),
+                cli.clipboard,
+                cli.quiet,
+                cli.pipe,
+                cli.no_thinking,
+                cli.recursion,
+                cli.iterations,
+            );
+        }
         Some(Commands::Start { verbose }) => {
-            println!("Starting the application...");
+            utils::output::startup_animation();
+            utils::output::print_success("Application started successfully!");
             if *verbose {
-                println!("Running in verbose mode!");
+                utils::output::println_colored("Running in verbose mode!", utils::output::Color::BrightYellow);
             }
             // Add custom logic here
         }
-        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking, recursion }) => {
-            run_prompt(goals.clone(), &format, &warnings, *clipboard, *quiet, *pipe, *no_thinking, *recursion);
+        Some(Commands::Prompt { goals, format, warnings, clipboard, quiet, pipe, no_thinking, recursion, iterations }) => {
+            run_prompt(goals.clone(), format, warnings, *clipboard, *quiet, *pipe, *no_thinking, *recursion, *iterations);
         }
         Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking }) => {
             run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking);
@@ -179,8 +225,8 @@ fn main() {
             api_key: cli_api_key,
             model: cli_model,
         }) => {
-            // Interactive configuration mode
-            println!("🤖 Welcome to Ola Interactive Configuration!");
+            // Interactive configuration mode with colorful banner
+            utils::output::print_banner("🤖 Welcome to Ola Interactive Configuration! 🤖", utils::output::Color::DeepSkyBlue);
 
             // Provider selection - use command line arg if provided, otherwise ask
             let provider_name = if let Some(p) = cli_provider.clone() {
@@ -202,12 +248,12 @@ fn main() {
             } else {
                 match provider_name.as_str() {
                     "Ollama" => {
-                        println!("No API key needed for Ollama (using local instance)");
+                        utils::output::println_colored("🏠 No API key needed for Ollama (using local instance)", utils::output::Color::BrightGreen);
                         String::new()
                     }
                     "Gemini" => {
                         // Use Password input for secure API key entry
-                        println!("For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)");
+                        utils::output::println_colored("🧠 For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)", utils::output::Color::BrightYellow);
                         dialoguer::Password::with_theme(&ColorfulTheme::default())
                             .with_prompt("Google API Key")
                             .interact()
@@ -274,7 +320,7 @@ fn main() {
                         match config::fetch_ollama_models() {
                             Ok(models) => {
                                 if models.is_empty() {
-                                    eprintln!("No models found in Ollama. Using manual input...");
+                                    utils::output::println_colored("🔍 No models found in Ollama. Using manual input...", utils::output::Color::Orange);
                                     let model: String = Input::with_theme(&ColorfulTheme::default())
                                         .with_prompt("Model name (e.g., llama2, mistral)")
                                         .default("llama2".into())
@@ -283,7 +329,7 @@ fn main() {
                                     Some(model)
                                 } else {
                                     // Display available models in a select menu
-                                    println!("Found {} models in Ollama", models.len());
+                                    utils::output::println_colored(&format!("✨ Found {} models in Ollama", models.len()), utils::output::Color::BrightGreen);
                                     let selected_idx = Select::with_theme(&ColorfulTheme::default())
                                         .with_prompt("Select a model")
                                         .items(&models)
@@ -317,10 +363,7 @@ fn main() {
             };
 
             // Validate the configuration
-            println!(
-                "Validating configuration for provider: {}",
-                provider_config.provider
-            );
+            utils::output::print_spinner_frame(0, &format!("Validating configuration for provider: {}", provider_config.provider));
             if let Err(e) = config::validate_provider_config(&provider_config) {
                 eprintln!("❌ Invalid configuration: {}", e);
                 std::process::exit(1);
@@ -329,7 +372,7 @@ fn main() {
             // Test connection if possible
             match provider_config.provider.as_str() {
                 "Ollama" => {
-                    println!("Testing connection to Ollama...");
+                    utils::output::println_colored("🔌 Testing connection to Ollama...", utils::output::Color::BrightCyan);
                     // Simple test to check if Ollama is running
                     match std::process::Command::new("curl")
                         .arg("-s")
@@ -338,23 +381,26 @@ fn main() {
                     {
                         Ok(output) => {
                             if output.status.success() {
-                                println!("✅ Successfully connected to Ollama");
+                                utils::output::clear_line();
+                                utils::output::print_success("Successfully connected to Ollama");
                             } else {
-                                eprintln!("❌ Failed to connect to Ollama. Is it running?");
+                                utils::output::clear_line();
+                                utils::output::print_error("Failed to connect to Ollama. Is it running?");
                                 std::process::exit(1);
                             }
                         }
                         Err(_) => {
-                            eprintln!("❌ Failed to connect to Ollama. Is it running?");
+                            utils::output::clear_line();
+                            utils::output::print_error("Failed to connect to Ollama. Is it running?");
                             std::process::exit(1);
                         }
                     }
                 }
                 "OpenAI" | "Anthropic" => {
-                    println!(
+                    utils::output::print_success(&format!(
                         "API key set for {}. Validation complete.",
                         provider_config.provider
-                    );
+                    ));
                     // For Anthropic and OpenAI, we just check API key format in validate_provider_config
                     // A full API test would require making an actual API call
                 }
@@ -368,12 +414,12 @@ fn main() {
                 std::process::exit(1);
             }
 
-            println!(
-                "✅ Configuration saved for provider: {}",
+            utils::output::print_success(&format!(
+                "Configuration saved for provider: {}",
                 provider_config.provider
-            );
+            ));
             if let Some(model) = provider_config.model {
-                println!("Using model: {}", model);
+                utils::output::println_colored(&format!("🧠 Using model: {}", model), utils::output::Color::BrightBlue);
             }
         }
         Some(Commands::Session {
@@ -425,9 +471,6 @@ fn main() {
                 eprintln!("Session output logged to sessions.jsonl");
             }
         }
-        None => {
-            eprintln!("No subcommand was used. Try `ola --help` for more info.");
-        }
     }
 }
 
@@ -435,7 +478,7 @@ fn read_from_stdin() -> String {
     utils::piping::read_from_stdin()
 }
 
-fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, recursion: Option<u8>) {
+fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, recursion: Option<u8>, iterations: Option<u8>) {
     // Track recursion wave number (defaults to 0 for non-recursive operations)
     let wave_number = std::env::var("OLA_RECURSION_WAVE").ok().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
     
@@ -460,7 +503,7 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         
         eprintln!("{}[RECURSION WAVE {}]{}  Processing...", color, wave_number, reset);
     } else if !quiet {
-        eprintln!("Welcome to the Ola CLI Prompt!");
+        utils::output::print_rainbow("🌊 Welcome to the Ola CLI Prompt! 🌊");
     }
     
     // Read from stdin if pipe mode is enabled
@@ -516,10 +559,16 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         (goals, None)
     };
 
-    // Call the prompt function from the ola crate with context
-    let output = match &context {
-        Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx), no_thinking),
-        None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None, no_thinking),
+    // Call the appropriate function based on whether iterations are enabled
+    let output = if let Some(max_iterations) = iterations {
+        // Use iteration mode
+        prompt::interactive_iterations(&final_goals, &format, &warnings, clipboard, context.as_deref(), no_thinking, max_iterations)
+    } else {
+        // Use standard reasoning
+        match &context {
+            Some(ctx) => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, Some(ctx), no_thinking),
+            None => prompt::structure_reasoning(&final_goals, &format, &warnings, clipboard, None, no_thinking),
+        }
     };
 
     if !quiet {
@@ -581,6 +630,9 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
                         cmd.arg("--no-thinking");
                     }
                     cmd.args(["--recursion", &max_waves.to_string()]);
+                    if let Some(iter) = iterations {
+                        cmd.args(["--iterations", &iter.to_string()]);
+                    }
                     
                     // Execute the command
                     match cmd.status() {
@@ -659,6 +711,7 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
         Err(e) => eprintln!("Prompt returned error: {:?}", e),
     }
 }
+
 
 fn append_to_log(filename: &str, entry: &str) -> std::io::Result<()> {
     let mut file = OpenOptions::new()
@@ -771,7 +824,9 @@ fn list_models(provider: Option<String>, quiet: bool) {
     };
 
     if !quiet {
-        println!("Fetching available models for provider: {}", provider_name);
+        utils::output::print_spinner_frame(0, &format!("Fetching available models for provider: {}", provider_name));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        utils::output::clear_line();
     }
 
     match provider_name.as_str() {
@@ -781,13 +836,13 @@ fn list_models(provider: Option<String>, quiet: bool) {
                 Ok(models) => {
                     if models.is_empty() {
                         if !quiet {
-                            println!("No models found in Ollama.");
+                            utils::output::println_colored("🔍 No models found in Ollama.", utils::output::Color::Orange);
                         }
                     } else {
                         if !quiet {
-                            println!("Available Ollama models:");
+                            utils::output::print_banner("🤖 Available Ollama Models 🤖", utils::output::Color::BrightGreen);
                             for (i, model) in models.iter().enumerate() {
-                                println!("  {}. {}", i + 1, model);
+                                utils::output::println_colored(&format!("  {}. {}", i + 1, model), utils::output::Color::BrightCyan);
                             }
                         } else {
                             // In quiet mode, just print model names (one per line)
@@ -806,11 +861,11 @@ fn list_models(provider: Option<String>, quiet: bool) {
         },
         "OpenAI" => {
             if !quiet {
-                println!("OpenAI models:");
-                println!("  1. gpt-4o");
-                println!("  2. gpt-4-turbo");
-                println!("  3. gpt-4");
-                println!("  4. gpt-3.5-turbo");
+                utils::output::print_banner("🧠 OpenAI Models 🧠", utils::output::Color::BrightGreen);
+                utils::output::println_colored("  1. gpt-4o", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  2. gpt-4-turbo", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  3. gpt-4", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  4. gpt-3.5-turbo", utils::output::Color::BrightCyan);
             } else {
                 println!("gpt-4o");
                 println!("gpt-4-turbo");
@@ -820,11 +875,11 @@ fn list_models(provider: Option<String>, quiet: bool) {
         },
         "Gemini" => {
             if !quiet {
-                println!("Google Gemini models:");
-                println!("  1. gemini-1.5-pro");
-                println!("  2. gemini-1.5-flash");
-                println!("  3. gemini-1.0-pro");
-                println!("  4. gemini-1.0-pro-vision");
+                utils::output::print_banner("💎 Google Gemini Models 💎", utils::output::Color::Purple);
+                utils::output::println_colored("  1. gemini-1.5-pro", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  2. gemini-1.5-flash", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  3. gemini-1.0-pro", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  4. gemini-1.0-pro-vision", utils::output::Color::BrightCyan);
             } else {
                 println!("gemini-1.5-pro");
                 println!("gemini-1.5-flash");
@@ -834,12 +889,12 @@ fn list_models(provider: Option<String>, quiet: bool) {
         },
         "Anthropic" => {
             if !quiet {
-                println!("Anthropic models:");
-                println!("  1. claude-3-opus-20240229");
-                println!("  2. claude-3-sonnet-20240229");
-                println!("  3. claude-3-haiku-20240307");
-                println!("  4. claude-2.1");
-                println!("  5. claude-2.0");
+                utils::output::print_banner("🎭 Anthropic Claude Models 🎭", utils::output::Color::Orange);
+                utils::output::println_colored("  1. claude-3-opus-20240229", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  2. claude-3-sonnet-20240229", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  3. claude-3-haiku-20240307", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  4. claude-2.1", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  5. claude-2.0", utils::output::Color::BrightCyan);
             } else {
                 println!("claude-3-opus-20240229");
                 println!("claude-3-sonnet-20240229");
