@@ -216,6 +216,66 @@ fn log_session(
     Ok(())
 }
 
+/// Seamless automatic iterations for LLM responses  
+pub fn interactive_iterations(
+    goals: &str,
+    return_type: &str,
+    warnings: &str,
+    clipboard: bool,
+    context: Option<&str>,
+    no_thinking: bool,
+    max_iterations: u8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut conversation_history = Vec::new();
+    
+    for iteration in 1..=max_iterations {
+        println!("\n🔄 Iteration {}/{}", iteration, max_iterations);
+        println!("{}", "─".repeat(50));
+        
+        // Execute the current prompt
+        let response = execute_feedback_prompt(
+            goals,
+            return_type,
+            warnings,
+            context,
+            no_thinking,
+            &conversation_history,
+        )?;
+        
+        // Store this interaction
+        conversation_history.push(FeedbackInteraction {
+            iteration: iteration as usize,
+            goals: goals.to_string(),
+            response: response.clone(),
+        });
+        
+        // Handle clipboard copy if requested (only for final iteration)
+        if clipboard && iteration == max_iterations {
+            match crate::utils::clipboard::copy_to_clipboard(&response) {
+                Ok(_) => eprintln!("✅ Final response copied to clipboard"),
+                Err(e) => eprintln!("❌ Failed to copy to clipboard: {}", e)
+            }
+        }
+        
+        // Add automatic improvement feedback for next iteration (except last)
+        if iteration < max_iterations {
+            let auto_feedback = format!(
+                "Please improve this response. Make it more detailed, accurate, and helpful. Focus on addressing any gaps or areas that could be enhanced. This is iteration {} of {}.", 
+                iteration + 1, max_iterations
+            );
+            
+            conversation_history.push(FeedbackInteraction {
+                iteration: iteration as usize,
+                goals: format!("FEEDBACK: {}", auto_feedback),
+                response: String::new(),
+            });
+        }
+    }
+    
+    println!("\n✅ Completed {} automatic iterations", max_iterations);
+    Ok(())
+}
+
 /// Interactive feedback loop for iterating on LLM responses
 pub fn interactive_feedback(
     goals: &str,
