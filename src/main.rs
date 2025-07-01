@@ -52,7 +52,7 @@ struct OlaCli {
     /// Enable recursion with specified number of waves (1-10)
     #[arg(short = 'r', long, value_parser = clap::value_parser!(u8).range(1..=10))]
     recursion: Option<u8>,
-    /// Enable iteration mode with specified number of iterations (1-10)
+    /// Enable interactive iteration mode with user feedback between iterations (1-10)
     #[arg(short = 'i', long, value_parser = clap::value_parser!(u8).range(1..=10))]
     iterations: Option<u8>,
     /// Specify a subcommand
@@ -95,7 +95,7 @@ enum Commands {
         /// Enable recursion with specified number of waves (1-10)
         #[arg(short = 'r', long, value_parser = clap::value_parser!(u8).range(1..=10))]
         recursion: Option<u8>,
-        /// Enable iteration mode with specified number of iterations (1-10)
+        /// Enable interactive iteration mode with user feedback between iterations (1-10)
         #[arg(short = 'i', long, value_parser = clap::value_parser!(u8).range(1..=10))]
         iterations: Option<u8>,
     },

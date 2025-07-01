@@ -216,7 +216,7 @@ fn log_session(
     Ok(())
 }
 
-/// Seamless automatic iterations for LLM responses  
+/// Interactive iterations with user feedback for LLM responses  
 pub fn interactive_iterations(
     goals: &str,
     return_type: &str,
@@ -257,22 +257,39 @@ pub fn interactive_iterations(
             }
         }
         
-        // Add automatic improvement feedback for next iteration (except last)
+        // Prompt for user feedback for next iteration (except last)
         if iteration < max_iterations {
-            let auto_feedback = format!(
-                "Please improve this response. Make it more detailed, accurate, and helpful. Focus on addressing any gaps or areas that could be enhanced. This is iteration {} of {}.", 
-                iteration + 1, max_iterations
-            );
+            println!("\n💭 Provide feedback for the next iteration (or press Enter to skip):");
+            print!("Feedback: ");
+            std::io::Write::flush(&mut std::io::stdout())?;
             
-            conversation_history.push(FeedbackInteraction {
-                iteration: iteration as usize,
-                goals: format!("FEEDBACK: {}", auto_feedback),
-                response: String::new(),
-            });
+            let mut user_feedback = String::new();
+            std::io::stdin().read_line(&mut user_feedback)?;
+            let user_feedback = user_feedback.trim();
+            
+            if !user_feedback.is_empty() {
+                conversation_history.push(FeedbackInteraction {
+                    iteration: iteration as usize,
+                    goals: format!("FEEDBACK: {}", user_feedback),
+                    response: String::new(),
+                });
+            } else {
+                // If no feedback provided, use a simple improvement prompt
+                let default_feedback = format!(
+                    "Please refine and improve this response for iteration {} of {}.", 
+                    iteration + 1, max_iterations
+                );
+                
+                conversation_history.push(FeedbackInteraction {
+                    iteration: iteration as usize,
+                    goals: format!("FEEDBACK: {}", default_feedback),
+                    response: String::new(),
+                });
+            }
         }
     }
     
-    println!("\n✅ Completed {} automatic iterations", max_iterations);
+    println!("\n✅ Completed {} iterations with feedback", max_iterations);
     Ok(())
 }
 
@@ -327,24 +344,63 @@ pub fn interactive_feedback(
         // Check if we should auto-iterate or ask user for next action
         if let Some(max_iter) = max_iterations {
             if iteration < max_iter.into() {
-                // Auto-iterate with generic improvement feedback
-                let auto_feedback = format!("Please improve this response. Make it more detailed, accurate, and helpful. This is iteration {} of {}.", 
-                    iteration + 1, max_iter);
+                // Ask user if they want to continue to next iteration
+                println!("\n🤔 Continue to iteration {} of {}?", iteration + 1, max_iter);
+                let continue_options = vec![
+                    "Yes, continue with automatic improvement",
+                    "Yes, but let me provide specific feedback", 
+                    "No, finish here"
+                ];
                 
-                println!("\n🔄 Auto-iterating... (Iteration {} of {})", iteration + 1, max_iter);
-                println!("Auto-feedback: {}", auto_feedback);
+                let continue_choice = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt("What would you like to do?")
+                    .items(&continue_options)
+                    .default(0)
+                    .interact()?;
                 
-                // Add auto-feedback to conversation history
-                conversation_history.push(FeedbackInteraction {
-                    iteration,
-                    goals: format!("FEEDBACK: {}", auto_feedback),
-                    response: String::new(),
-                });
-                iteration += 1;
-                continue; // Skip the interactive menu
+                match continue_choice {
+                    0 => {
+                        // Auto-iterate with generic improvement feedback
+                        let auto_feedback = format!("Please improve this response. Make it more detailed, accurate, and helpful. This is iteration {} of {}.", 
+                            iteration + 1, max_iter);
+                        
+                        println!("\n🔄 Continuing to iteration {} of {}...", iteration + 1, max_iter);
+                        
+                        // Add auto-feedback to conversation history
+                        conversation_history.push(FeedbackInteraction {
+                            iteration,
+                            goals: format!("FEEDBACK: {}", auto_feedback),
+                            response: String::new(),
+                        });
+                        iteration += 1;
+                        continue; // Skip the interactive menu
+                    },
+                    1 => {
+                        // Let user provide specific feedback
+                        let user_feedback: String = Input::with_theme(&ColorfulTheme::default())
+                            .with_prompt("💬 Your feedback for the next iteration")
+                            .interact_text()?;
+                        
+                        if !user_feedback.trim().is_empty() {
+                            conversation_history.push(FeedbackInteraction {
+                                iteration,
+                                goals: format!("FEEDBACK: {}", user_feedback),
+                                response: String::new(),
+                            });
+                            iteration += 1;
+                            continue;
+                        }
+                    },
+                    2 => {
+                        // Finish early
+                        println!("\n✅ Completed {} iterations (stopped early)", iteration);
+                        break;
+                    },
+                    _ => unreachable!(),
+                }
             } else {
                 // Reached max iterations
-                println!("\n✅ Completed {} automatic iterations", max_iter);
+                println!("\n✅ Completed {} iterations", max_iter);
                 break;
             }
         }
