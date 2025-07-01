@@ -127,6 +127,33 @@ enum Commands {
         #[arg(short = 'f', long)]
         filter_thinking: bool,
     },
+    /// Interactive feedback loop for iterating on LLM responses
+    Feedback {
+        /// Goals for the reasoning call
+        #[arg(short, long)]
+        goals: Option<String>,
+        /// Expected return format
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+        /// Any warnings to consider
+        #[arg(short, long, default_value = "")]
+        warnings: String,
+        /// Optional: copy output to clipboard (defaults to false)
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+        /// Optional: suppress informational output for cleaner piping
+        #[arg(short = 'q', long)]
+        quiet: bool,
+        /// Optional: read input from stdin (pipe) instead of interactive prompt
+        #[arg(short = 'p', long)]
+        pipe: bool,
+        /// Hide thinking blocks (<think> </think>) and show an animation instead
+        #[arg(short = 't', long)]
+        no_thinking: bool,
+        /// Number of automatic iterations to perform (1-10)
+        #[arg(short = 'n', long, value_parser = clap::value_parser!(u8).range(1..=10))]
+        iterations: Option<u8>,
+    },
     /// View or modify application settings
     Settings {
         /// Optional: View current settings
@@ -166,6 +193,9 @@ fn main() {
         }
         Some(Commands::NonThink { prompt, clipboard, quiet, pipe, filter_thinking }) => {
             run_non_think(prompt.clone(), *clipboard, *quiet, *pipe, *filter_thinking);
+        }
+        Some(Commands::Feedback { goals, format, warnings, clipboard, quiet, pipe, no_thinking, iterations }) => {
+            run_feedback(goals.clone(), format, warnings, *clipboard, *quiet, *pipe, *no_thinking, *iterations);
         }
         Some(Commands::Models { provider, quiet }) => {
             // Handle the Models subcommand
@@ -657,6 +687,87 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
             }
         },
         Err(e) => eprintln!("Prompt returned error: {:?}", e),
+    }
+}
+
+fn run_feedback(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, clipboard: bool, quiet: bool, pipe: bool, no_thinking: bool, iterations: Option<u8>) {
+    if !quiet {
+        eprintln!("🔄 Starting interactive feedback session...");
+    }
+    
+    // Read from stdin if pipe mode is enabled
+    let piped_content = if pipe {
+        read_from_stdin()
+    } else {
+        String::new()
+    };
+
+    // Check if goals were provided via CLI to determine flow
+    let cli_goals_provided = cli_goals.is_some();
+    
+    // Get goals from CLI args or prompt user
+    let goals = if let Some(ref g) = cli_goals {
+        g.clone()
+    } else if !piped_content.is_empty() {
+        // Use piped content as goals if no explicit goals were provided
+        piped_content.clone()
+    } else {
+        Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("🏆 Goals: ")
+            .default("".into())
+            .interact_text()
+            .unwrap()
+    };
+
+    // If goals were provided via CLI, use the CLI args for format and warnings too
+    // Otherwise, prompt for all three parts
+    let (format, warnings) = if cli_goals_provided || !piped_content.is_empty() {
+        (cli_format.to_string(), cli_warnings.to_string())
+    } else {
+        // Prompt for return format
+        let format = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("📝 Return Format: ")
+            .default("text".into())
+            .interact_text()
+            .unwrap();
+        
+        // Prompt for warnings
+        let warnings = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("⚠️ Warnings: ")
+            .default("".into())
+            .interact_text()
+            .unwrap();
+        
+        (format, warnings)
+    };
+
+    // If we have piped content but also explicit goals, use piped content as context
+    let (final_goals, context) = if !piped_content.is_empty() && cli_goals_provided {
+        (goals, Some(piped_content))
+    } else {
+        (goals, None)
+    };
+
+    // Call the interactive feedback function from the prompt module
+    let output = prompt::interactive_feedback(&final_goals, &format, &warnings, clipboard, context.as_deref(), no_thinking, iterations);
+
+    if !quiet {
+        eprintln!(
+            "Initial setup:\nGoals: {}\nReturn Format: {}\nWarnings: {}",
+            final_goals, format, warnings
+        );
+        if let Some(ctx) = context {
+            eprintln!("Context from stdin: {} characters", ctx.len());
+        }
+    }
+    
+    match output {
+        Ok(()) => {
+            if !quiet {
+                eprintln!("✅ Feedback session completed successfully");
+            }
+        },
+        Err(e) => eprintln!("❌ Feedback session returned error: {:?}", e),
     }
 }
 

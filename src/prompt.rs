@@ -1,9 +1,7 @@
 // Prompt handling logic module
 use serde_json::json;
-use std::io::{BufRead, Write};
 use std::path::Path;
 use std::fs;
-use std::time::Duration;
 use regex::Regex;
 
 use crate::api::{create_api_client_from_config, format_prompt};
@@ -213,6 +211,241 @@ fn log_session(
     if let Some(wave) = wave_number {
         log_entry["recursion_wave"] = json!(wave);
     }
+    
+    piping::append_to_log(&settings.behavior.log_file, &log_entry.to_string())?;
+    Ok(())
+}
+
+/// Interactive feedback loop for iterating on LLM responses
+pub fn interactive_feedback(
+    goals: &str,
+    return_type: &str,
+    warnings: &str,
+    clipboard: bool,
+    context: Option<&str>,
+    no_thinking: bool,
+    max_iterations: Option<u8>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use dialoguer::{theme::ColorfulTheme, Input, Select};
+    
+    let mut conversation_history = Vec::new();
+    let mut iteration = 1;
+    
+    // Initial prompt
+    let mut current_goals = goals.to_string();
+    let mut current_context = context.map(|c| c.to_string());
+    
+    loop {
+        println!("\n🔄 Iteration {}", iteration);
+        println!("{}", "─".repeat(50));
+        
+        // Execute the current prompt
+        let response = execute_feedback_prompt(
+            &current_goals,
+            return_type,
+            warnings,
+            current_context.as_deref(),
+            no_thinking,
+            &conversation_history,
+        )?;
+        
+        // Store this interaction
+        conversation_history.push(FeedbackInteraction {
+            iteration,
+            goals: current_goals.clone(),
+            response: response.clone(),
+        });
+        
+        // Handle clipboard copy if requested
+        if clipboard {
+            match clipboard::copy_to_clipboard(&response) {
+                Ok(_) => output::print_success("Response copied to clipboard"),
+                Err(e) => output::print_error(&format!("Failed to copy to clipboard: {}", e))
+            }
+        }
+        
+        // Check if we should auto-iterate or ask user for next action
+        if let Some(max_iter) = max_iterations {
+            if iteration < max_iter.into() {
+                // Auto-iterate with generic improvement feedback
+                let auto_feedback = format!("Please improve this response. Make it more detailed, accurate, and helpful. This is iteration {} of {}.", 
+                    iteration + 1, max_iter);
+                
+                println!("\n🔄 Auto-iterating... (Iteration {} of {})", iteration + 1, max_iter);
+                println!("Auto-feedback: {}", auto_feedback);
+                
+                // Add auto-feedback to conversation history
+                conversation_history.push(FeedbackInteraction {
+                    iteration,
+                    goals: format!("FEEDBACK: {}", auto_feedback),
+                    response: String::new(),
+                });
+                iteration += 1;
+                continue; // Skip the interactive menu
+            } else {
+                // Reached max iterations
+                println!("\n✅ Completed {} automatic iterations", max_iter);
+                break;
+            }
+        }
+        
+        // Interactive mode - ask user for next action
+        println!("\n🤔 What would you like to do next?");
+        let options = vec![
+            "Provide feedback and iterate",
+            "Add more context",
+            "Change goals",
+            "Finish (exit feedback loop)",
+        ];
+        
+        let choice = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Choose an action")
+            .items(&options)
+            .default(0)
+            .interact()?;
+        
+        match choice {
+            0 => {
+                // Provide feedback and iterate
+                let feedback: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("💬 Your feedback")
+                    .interact_text()?;
+                
+                if !feedback.trim().is_empty() {
+                    // Add feedback to conversation history
+                    conversation_history.push(FeedbackInteraction {
+                        iteration,
+                        goals: format!("FEEDBACK: {}", feedback),
+                        response: String::new(),
+                    });
+                    iteration += 1;
+                }
+            },
+            1 => {
+                // Add more context
+                let additional_context: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("📝 Additional context")
+                    .interact_text()?;
+                
+                if !additional_context.trim().is_empty() {
+                    current_context = match current_context {
+                        Some(existing) => Some(format!("{}\n\nAdditional Context: {}", existing, additional_context)),
+                        None => Some(additional_context),
+                    };
+                    iteration += 1;
+                }
+            },
+            2 => {
+                // Change goals
+                let new_goals: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("🎯 New goals")
+                    .default(current_goals.clone())
+                    .interact_text()?;
+                
+                if new_goals != current_goals {
+                    current_goals = new_goals;
+                    iteration += 1;
+                }
+            },
+            3 => {
+                // Finish
+                println!("\n✅ Feedback session completed after {} iterations", iteration);
+                break;
+            },
+            _ => unreachable!(),
+        }
+    }
+    
+    Ok(())
+}
+
+// Structure to hold feedback interactions
+#[derive(Debug, Clone)]
+struct FeedbackInteraction {
+    iteration: usize,
+    goals: String,
+    response: String,
+}
+
+// Helper function to execute a prompt with feedback history
+fn execute_feedback_prompt(
+    goals: &str,
+    return_type: &str,
+    warnings: &str,
+    context: Option<&str>,
+    no_thinking: bool,
+    conversation_history: &[FeedbackInteraction],
+) -> Result<String, Box<dyn std::error::Error>> {
+    let settings = crate::settings::Settings::load().unwrap_or_default();
+    
+    // Build the prompt with conversation history
+    let mut full_prompt = format_prompt(goals, return_type, warnings, context);
+    
+    // Add conversation history if present
+    if !conversation_history.is_empty() {
+        full_prompt.push_str("\n\n--- CONVERSATION HISTORY ---\n");
+        for interaction in conversation_history {
+            if interaction.goals.starts_with("FEEDBACK: ") {
+                full_prompt.push_str(&format!("User Feedback: {}\n", 
+                    interaction.goals.strip_prefix("FEEDBACK: ").unwrap_or(&interaction.goals)));
+            } else if !interaction.response.is_empty() {
+                full_prompt.push_str(&format!("Previous Response (Iteration {}): {}\n", 
+                    interaction.iteration, interaction.response));
+            }
+        }
+        full_prompt.push_str("--- END HISTORY ---\n\n");
+    }
+    
+    // Read and append hints if available
+    append_hints_if_available(&mut full_prompt)?;
+    
+    // Load configuration and create API client
+    let api_client = create_api_client_from_config()?;
+    let config = crate::config::Config::load()?;
+    let provider_config = config.get_active_provider().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No active provider configured. Run 'ola configure' first.",
+        )
+    })?;
+    
+    let model = provider_config
+        .model
+        .as_deref()
+        .unwrap_or(&settings.default_model);
+    
+    // Stream the response
+    let response = stream_response(&api_client, &full_prompt, model, no_thinking)?;
+    
+    // Log session if enabled in settings
+    if settings.behavior.enable_logging {
+        log_feedback_session(goals, return_type, warnings, model, &response, conversation_history.len())?;
+    }
+    
+    Ok(response)
+}
+
+// Helper function to log feedback session information
+fn log_feedback_session(
+    goals: &str,
+    return_type: &str,
+    warnings: &str,
+    model: &str,
+    response: &str,
+    iteration: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = crate::settings::Settings::load().unwrap_or_default();
+    
+    let log_entry = json!({
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "session_type": "feedback",
+        "iteration": iteration,
+        "goals": goals,
+        "return_format": return_type,
+        "warnings": warnings,
+        "model": model,
+        "output_length": response.len(),
+    });
     
     piping::append_to_log(&settings.behavior.log_file, &log_entry.to_string())?;
     Ok(())
