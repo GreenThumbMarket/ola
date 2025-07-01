@@ -259,8 +259,15 @@ pub fn interactive_iterations(
         
         // Prompt for user feedback for next iteration (except last)
         if iteration < max_iterations {
-            println!("\n💭 Provide feedback for the next iteration (or press Enter to skip):");
-            print!("Feedback: ");
+            println!("\n💭 How would you like to improve this response for iteration {}?", iteration + 1);
+            println!("Examples of helpful feedback:");
+            println!("  • Make it more detailed/concise");
+            println!("  • Focus on specific aspects");
+            println!("  • Add examples or clarifications");
+            println!("  • Change the tone or approach");
+            println!("  • Address missing points");
+            println!();
+            print!("Your feedback (or press Enter for general improvement): ");
             std::io::Write::flush(&mut std::io::stdout())?;
             
             let mut user_feedback = String::new();
@@ -273,10 +280,11 @@ pub fn interactive_iterations(
                     goals: format!("FEEDBACK: {}", user_feedback),
                     response: String::new(),
                 });
+                println!("✅ Feedback recorded: {}", user_feedback);
             } else {
-                // If no feedback provided, use a simple improvement prompt
+                // If no feedback provided, use a more specific improvement prompt
                 let default_feedback = format!(
-                    "Please refine and improve this response for iteration {} of {}.", 
+                    "Please review your previous response and improve it by making it more comprehensive, clearer, and better structured. This is iteration {} of {}, so focus on refinement and quality enhancement.", 
                     iteration + 1, max_iterations
                 );
                 
@@ -285,8 +293,16 @@ pub fn interactive_iterations(
                     goals: format!("FEEDBACK: {}", default_feedback),
                     response: String::new(),
                 });
+                println!("✅ Using default improvement guidance for next iteration");
             }
         }
+    }
+    
+    // Provide feedback analysis summary
+    let feedback_summary = analyze_feedback_patterns(&conversation_history);
+    if !feedback_summary.is_empty() {
+        println!("\n📊 Feedback Analysis Summary:");
+        println!("{}", feedback_summary);
     }
     
     println!("\n✅ Completed {} iterations with feedback", max_iterations);
@@ -499,16 +515,29 @@ fn execute_feedback_prompt(
     
     // Add conversation history if present
     if !conversation_history.is_empty() {
-        full_prompt.push_str("\n\n--- CONVERSATION HISTORY ---\n");
+        full_prompt.push_str("\n\n--- ITERATION HISTORY ---\n");
+        full_prompt.push_str("The following shows the conversation history from previous iterations.\n");
+        full_prompt.push_str("Pay close attention to the user feedback and incorporate it into your next response.\n\n");
+        
+        let mut current_iteration = 0;
         for interaction in conversation_history {
             if interaction.goals.starts_with("FEEDBACK: ") {
-                full_prompt.push_str(&format!("User Feedback: {}\n", 
+                full_prompt.push_str(&format!("📝 User Feedback for Iteration {}: {}\n\n", 
+                    current_iteration + 1,
                     interaction.goals.strip_prefix("FEEDBACK: ").unwrap_or(&interaction.goals)));
             } else if !interaction.response.is_empty() {
-                full_prompt.push_str(&format!("Previous Response (Iteration {}): {}\n", 
+                current_iteration = interaction.iteration;
+                full_prompt.push_str(&format!("🤖 Previous Response (Iteration {}): {}\n\n", 
                     interaction.iteration, interaction.response));
             }
         }
+        
+        // Add specific instruction for incorporating feedback
+        full_prompt.push_str("--- FEEDBACK INCORPORATION INSTRUCTIONS ---\n");
+        full_prompt.push_str("Please carefully review the above feedback and previous responses.\n");
+        full_prompt.push_str("Incorporate the user's feedback to improve your response.\n");
+        full_prompt.push_str("Address any specific concerns or suggestions mentioned in the feedback.\n");
+        full_prompt.push_str("Build upon the previous work while making the requested improvements.\n");
         full_prompt.push_str("--- END HISTORY ---\n\n");
     }
     
@@ -539,6 +568,76 @@ fn execute_feedback_prompt(
     }
     
     Ok(response)
+}
+
+// Helper function to analyze feedback patterns and provide insights
+fn analyze_feedback_patterns(conversation_history: &[FeedbackInteraction]) -> String {
+    let feedback_interactions: Vec<_> = conversation_history
+        .iter()
+        .filter(|interaction| interaction.goals.starts_with("FEEDBACK: "))
+        .collect();
+    
+    if feedback_interactions.is_empty() {
+        return String::new();
+    }
+    
+    let mut analysis = Vec::new();
+    
+    // Count user-provided vs default feedback
+    let user_feedback_count = feedback_interactions
+        .iter()
+        .filter(|interaction| {
+            let feedback = interaction.goals.strip_prefix("FEEDBACK: ").unwrap_or("");
+            !feedback.contains("Please review your previous response and improve it")
+        })
+        .count();
+    
+    let default_feedback_count = feedback_interactions.len() - user_feedback_count;
+    
+    analysis.push(format!("  • {} iterations with custom user feedback", user_feedback_count));
+    if default_feedback_count > 0 {
+        analysis.push(format!("  • {} iterations with default improvement guidance", default_feedback_count));
+    }
+    
+    // Analyze feedback themes
+    let mut themes = Vec::new();
+    let feedback_text: String = feedback_interactions
+        .iter()
+        .map(|interaction| interaction.goals.strip_prefix("FEEDBACK: ").unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    
+    let feedback_lower = feedback_text.to_lowercase();
+    
+    if feedback_lower.contains("detail") || feedback_lower.contains("comprehensive") || feedback_lower.contains("thorough") {
+        themes.push("Detail enhancement");
+    }
+    if feedback_lower.contains("concise") || feedback_lower.contains("brief") || feedback_lower.contains("shorter") {
+        themes.push("Brevity improvement");
+    }
+    if feedback_lower.contains("example") || feedback_lower.contains("sample") {
+        themes.push("Example requests");
+    }
+    if feedback_lower.contains("clarif") || feedback_lower.contains("explain") || feedback_lower.contains("clear") {
+        themes.push("Clarity improvements");
+    }
+    if feedback_lower.contains("tone") || feedback_lower.contains("style") {
+        themes.push("Tone/style adjustments");
+    }
+    if feedback_lower.contains("focus") || feedback_lower.contains("specific") {
+        themes.push("Focus refinement");
+    }
+    
+    if !themes.is_empty() {
+        analysis.push(format!("  • Common feedback themes: {}", themes.join(", ")));
+    }
+    
+    // Provide recommendations
+    if user_feedback_count < feedback_interactions.len() / 2 {
+        analysis.push("  💡 Tip: Providing specific feedback helps tailor responses to your needs".to_string());
+    }
+    
+    analysis.join("\n")
 }
 
 // Helper function to log feedback session information
