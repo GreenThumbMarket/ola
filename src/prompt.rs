@@ -229,8 +229,9 @@ pub fn interactive_iterations(
     let mut conversation_history = Vec::new();
     
     for iteration in 1..=max_iterations {
-        println!("\n🔄 Iteration {}/{}", iteration, max_iterations);
-        println!("{}", "─".repeat(50));
+        println!();
+        output::print_banner(&format!("🔄 Iteration {}/{} 🔄", iteration, max_iterations), output::Color::BrightCyan);
+        println!();
         
         // Execute the current prompt
         let response = execute_feedback_prompt(
@@ -259,15 +260,17 @@ pub fn interactive_iterations(
         
         // Prompt for user feedback for next iteration (except last)
         if iteration < max_iterations {
-            println!("\n💭 How would you like to improve this response for iteration {}?", iteration + 1);
-            println!("Examples of helpful feedback:");
-            println!("  • Make it more detailed/concise");
-            println!("  • Focus on specific aspects");
-            println!("  • Add examples or clarifications");
-            println!("  • Change the tone or approach");
-            println!("  • Address missing points");
             println!();
-            print!("Your feedback (or press Enter for general improvement): ");
+            output::print_pulsing(&format!("💭 How would you like to improve this response for iteration {}?", iteration + 1), output::Color::BrightYellow);
+            println!();
+            output::println_colored("✨ Examples of helpful feedback:", output::Color::BrightMagenta);
+            output::println_colored("  • Make it more detailed/concise", output::Color::Cyan);
+            output::println_colored("  • Focus on specific aspects", output::Color::Cyan);
+            output::println_colored("  • Add examples or clarifications", output::Color::Cyan);
+            output::println_colored("  • Change the tone or approach", output::Color::Cyan);
+            output::println_colored("  • Address missing points", output::Color::Cyan);
+            println!();
+            output::print_colored("📝 Your feedback (or press Enter for general improvement): ", output::Color::BrightGreen);
             std::io::Write::flush(&mut std::io::stdout())?;
             
             let mut user_feedback = String::new();
@@ -280,7 +283,7 @@ pub fn interactive_iterations(
                     goals: format!("FEEDBACK: {}", user_feedback),
                     response: String::new(),
                 });
-                println!("✅ Feedback recorded: {}", user_feedback);
+                output::print_success(&format!("Feedback recorded: {}", user_feedback));
             } else {
                 // If no feedback provided, use a more specific improvement prompt
                 let default_feedback = format!(
@@ -293,7 +296,7 @@ pub fn interactive_iterations(
                     goals: format!("FEEDBACK: {}", default_feedback),
                     response: String::new(),
                 });
-                println!("✅ Using default improvement guidance for next iteration");
+                output::print_success("Using default improvement guidance for next iteration");
             }
         }
     }
@@ -301,11 +304,13 @@ pub fn interactive_iterations(
     // Provide feedback analysis summary
     let feedback_summary = analyze_feedback_patterns(&conversation_history);
     if !feedback_summary.is_empty() {
-        println!("\n📊 Feedback Analysis Summary:");
-        println!("{}", feedback_summary);
+        println!();
+        output::print_banner("📊 Feedback Analysis Summary 📊", output::Color::Purple);
+        output::println_colored(&feedback_summary, output::Color::BrightWhite);
     }
     
-    println!("\n✅ Completed {} iterations with feedback", max_iterations);
+    println!();
+    output::print_rainbow(&format!("🎉 Completed {} iterations with feedback! 🎉", max_iterations));
     Ok(())
 }
 
