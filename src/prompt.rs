@@ -524,14 +524,12 @@ fn execute_feedback_prompt(
         full_prompt.push_str("The following shows the conversation history from previous iterations.\n");
         full_prompt.push_str("Pay close attention to the user feedback and incorporate it into your next response.\n\n");
         
-        let mut current_iteration = 0;
         for interaction in conversation_history {
             if interaction.goals.starts_with("FEEDBACK: ") {
                 full_prompt.push_str(&format!("📝 User Feedback for Iteration {}: {}\n\n", 
-                    current_iteration + 1,
+                    interaction.iteration,
                     interaction.goals.strip_prefix("FEEDBACK: ").unwrap_or(&interaction.goals)));
             } else if !interaction.response.is_empty() {
-                current_iteration = interaction.iteration;
                 full_prompt.push_str(&format!("🤖 Previous Response (Iteration {}): {}\n\n", 
                     interaction.iteration, interaction.response));
             }
