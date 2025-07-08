@@ -7,7 +7,7 @@
 
 use chrono::Utc;
 use clap::Parser;
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Input, Select, Confirm};
 use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -228,6 +228,41 @@ fn main() {
             // Interactive configuration mode with colorful banner
             utils::output::print_banner("🤖 Welcome to Ola Interactive Configuration! 🤖", utils::output::Color::DeepSkyBlue);
 
+            // Check for auto-detection from environment variables first
+            if let Some(detected_config) = config::detect_provider_from_env() {
+                println!("🔍 Auto-detected configuration from environment variables:");
+                println!("   Provider: {}", detected_config.provider);
+                println!("   Model: {}", detected_config.model.as_ref().unwrap_or(&"default".to_string()));
+                
+                let confirm = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Use this configuration?")
+                    .default(true)
+                    .interact()
+                    .unwrap();
+                
+                if confirm {
+                    // Validate the auto-detected configuration
+                    println!("Validating auto-detected configuration...");
+                    if let Err(e) = config::validate_provider_config(&detected_config) {
+                        eprintln!("❌ Invalid auto-detected configuration: {}", e);
+                        std::process::exit(1);
+                    }
+                    
+                    // Save auto-detected configuration
+                    config::add_provider(detected_config.clone());
+                    if let Err(e) = config::save() {
+                        eprintln!("Failed to save configuration: {}", e);
+                        std::process::exit(1);
+                    }
+                    
+                    println!("✅ Auto-detected configuration saved for provider: {}", detected_config.provider);
+                    if let Some(model) = detected_config.model {
+                        println!("Using model: {}", model);
+                    }
+                    return;
+                }
+            }
+
             // Provider selection - use command line arg if provided, otherwise ask
             let provider_name = if let Some(p) = cli_provider.clone() {
                 p
@@ -242,29 +277,64 @@ fn main() {
                 providers[selected_idx].to_string()
             };
 
-            // API Key handling based on provider and CLI args
+            // API Key handling - check environment first, then CLI args, then prompt
             let api_key = if let Some(key) = cli_api_key.clone() {
                 key
             } else {
-                match provider_name.as_str() {
-                    "Ollama" => {
-                        utils::output::println_colored("🏠 No API key needed for Ollama (using local instance)", utils::output::Color::BrightGreen);
-                        String::new()
+                // Check environment variables first
+                let env_key = match provider_name.as_str() {
+                    "OpenAI" => std::env::var("OPENAI_API_KEY").ok(),
+                    "Anthropic" => std::env::var("ANTHROPIC_API_KEY").ok(),
+                    "Gemini" => std::env::var("GEMINI_API_KEY").ok(),
+                    _ => None,
+                };
+                
+                if let Some(key) = env_key {
+                    if !key.trim().is_empty() {
+                        println!("🔍 Using API key from environment variable");
+                        key
+                    } else {
+                        // Prompt for API key if env var is empty
+                        match provider_name.as_str() {
+                            "Ollama" => {
+                                println!("No API key needed for Ollama (using local instance)");
+                                String::new()
+                            }
+                            "Gemini" => {
+                                println!("For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)");
+                                dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                    .with_prompt("Google API Key")
+                                    .interact()
+                                    .unwrap()
+                            }
+                            _ => {
+                                dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                    .with_prompt(format!("{} API Key", provider_name))
+                                    .interact()
+                                    .unwrap()
+                            }
+                        }
                     }
-                    "Gemini" => {
-                        // Use Password input for secure API key entry
-                        utils::output::println_colored("🧠 For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)", utils::output::Color::BrightYellow);
-                        dialoguer::Password::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Google API Key")
-                            .interact()
-                            .unwrap()
-                    }
-                    _ => {
-                        // Use Password input for secure API key entry
-                        dialoguer::Password::with_theme(&ColorfulTheme::default())
-                            .with_prompt(format!("{} API Key", provider_name))
-                            .interact()
-                            .unwrap()
+                } else {
+                    // No env var found, prompt for API key
+                    match provider_name.as_str() {
+                        "Ollama" => {
+                            println!("No API key needed for Ollama (using local instance)");
+                            String::new()
+                        }
+                        "Gemini" => {
+                            println!("For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)");
+                            dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Google API Key")
+                                .interact()
+                                .unwrap()
+                        }
+                        _ => {
+                            dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                .with_prompt(format!("{} API Key", provider_name))
+                                .interact()
+                                .unwrap()
+                        }
                     }
                 }
             };
