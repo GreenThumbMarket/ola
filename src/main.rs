@@ -229,7 +229,7 @@ fn main() {
             } else {
                 match provider_name.as_str() {
                     "OpenAI" => {
-                        let models = vec!["gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"];
+                        let models = vec!["gpt-4o", "gpt-4", "o3", "o3-pro", "o4", "o4-mini", "o4-mini-high"];
                         let idx = Select::with_theme(&ColorfulTheme::default())
                             .with_prompt("Model")
                             .items(&models)
@@ -808,14 +808,20 @@ fn list_models(provider: Option<String>, quiet: bool) {
             if !quiet {
                 println!("OpenAI models:");
                 println!("  1. gpt-4o");
-                println!("  2. gpt-4-turbo");
-                println!("  3. gpt-4");
-                println!("  4. gpt-3.5-turbo");
+                println!("  2. gpt-4");
+                println!("  3. o3");
+                println!("  4. o3-pro");
+                println!("  5. o4");
+                println!("  6. o4-mini");
+                println!("  7. o4-mini-high");
             } else {
                 println!("gpt-4o");
-                println!("gpt-4-turbo");
                 println!("gpt-4");
-                println!("gpt-3.5-turbo");
+                println!("o3");
+                println!("o3-pro");
+                println!("o4");
+                println!("o4-mini");
+                println!("o4-mini-high");
             }
         },
         "Gemini" => {
