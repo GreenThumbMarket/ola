@@ -1,6 +1,5 @@
 // Google Gemini API implementation
 use serde_json::json;
-use std::io::{BufRead, Write};
 use std::time::Duration;
 
 use super::Provider;
@@ -93,9 +92,5 @@ impl Provider for Gemini {
         }
         
         Ok(full_response)
-    }
-    
-    fn get_provider_name(&self) -> &str {
-        "Gemini"
     }
 }

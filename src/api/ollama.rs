@@ -76,8 +76,4 @@ impl Provider for Ollama {
         
         Ok(full_response)
     }
-    
-    fn get_provider_name(&self) -> &str {
-        "Ollama"
-    }
 }

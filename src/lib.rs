@@ -16,4 +16,3 @@ pub mod utils;
 pub use config::{Config, ProviderConfig};
 pub use settings::Settings;
 pub use api::ApiClient;
-pub use prompt::PromptResult;

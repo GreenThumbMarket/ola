@@ -1,20 +1,12 @@
 // Prompt handling logic module
 use serde_json::json;
-use std::io::{BufRead, Write};
 use std::path::Path;
 use std::fs;
-use std::time::Duration;
 use regex::Regex;
 
 use crate::api::{create_api_client_from_config, format_prompt};
 use crate::utils::{clipboard, output, piping};
 
-// Structure to hold the result of a prompt for testing
-#[derive(Debug)]
-pub struct PromptResult {
-    pub content: String,
-    pub model: String,
-}
 
 /// Main function for structured reasoning with <think> blocks
 pub fn structure_reasoning(
@@ -218,91 +210,3 @@ fn log_session(
     Ok(())
 }
 
-// Testing functions
-// Test version of structure_reasoning
-pub fn structure_reasoning_test(
-    goals: &str,
-    return_type: &str,
-    warnings: &str,
-    clipboard: bool,
-    context: Option<&str>,
-    no_thinking: bool,
-) -> Result<PromptResult, Box<dyn std::error::Error>> {
-    // This is a testable version that returns the response instead of printing it
-    let settings = crate::settings::Settings::load().unwrap_or_default();
-    
-    // Build the input data with optional context
-    let input_data = if let Some(ctx) = context {
-        format!(
-            "Goals: {}\nReturn Format: {}\nWarnings: {}\nContext: {}",
-            goals, return_type, warnings, ctx
-        )
-    } else {
-        format!(
-            "Goals: {}\nReturn Format: {}\nWarnings: {}",
-            goals, return_type, warnings
-        )
-    };
-
-    // Load configuration
-    let config = crate::config::Config::load()?;
-    let provider_config = config.get_active_provider().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "No active provider configured.",
-        )
-    })?;
-
-    // Use model from config or settings
-    let model = provider_config
-        .model
-        .as_deref()
-        .unwrap_or(&settings.default_model);
-    
-    // Here's where we would mock the API call in tests
-    // For testing, we'll just return the input as the response
-    Ok(PromptResult {
-        content: format!("This is a mocked response from the {} API.", provider_config.provider),
-        model: model.to_string(),
-    })
-}
-
-// Test version of stream_non_think
-pub fn stream_non_think_test(
-    prompt: &str,
-    clipboard: bool,
-    context: Option<&str>,
-    filter_thinking: bool,
-) -> Result<PromptResult, Box<dyn std::error::Error>> {
-    // This is a testable version that returns the response instead of printing it
-    let settings = crate::settings::Settings::load().unwrap_or_default();
-    
-    // Build the input data with optional context
-    let input_data = if let Some(ctx) = context {
-        format!("{}\nContext: {}", prompt, ctx)
-    } else {
-        prompt.to_string()
-    };
-
-    // Load configuration
-    let config = crate::config::Config::load()?;
-    let provider_config = config.get_active_provider().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "No active provider configured.",
-        )
-    })?;
-
-    // Use model from config or settings
-    let model = provider_config
-        .model
-        .as_deref()
-        .unwrap_or(&settings.default_model);
-    
-    // Here's where we would mock the API call in tests
-    // For testing, we'll just return the input as the response
-    Ok(PromptResult {
-        content: format!("This is a mocked response from the {} API.", provider_config.provider),
-        model: model.to_string(),
-    })
-}

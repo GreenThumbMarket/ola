@@ -38,8 +38,3 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// Check if clipboard functionality is available on the current platform
-pub fn is_clipboard_available() -> bool {
-    let os = std::env::consts::OS;
-    matches!(os, "macos" | "linux" | "windows")
-}
