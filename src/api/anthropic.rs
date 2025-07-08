@@ -99,8 +99,4 @@ impl Provider for Anthropic {
         
         Ok(full_response)
     }
-    
-    fn get_provider_name(&self) -> &str {
-        "Anthropic"
-    }
 }

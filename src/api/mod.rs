@@ -1,6 +1,4 @@
 // API module for handling provider-specific API interactions
-use serde_json::json;
-use std::time::Duration;
 
 // Import provider-specific modules
 mod openai;
@@ -17,7 +15,6 @@ pub use gemini::Gemini;
 // Trait for API providers
 pub trait Provider {
     fn send_prompt(&self, prompt: &str, model: &str, stream: bool) -> Result<String, Box<dyn std::error::Error>>;
-    fn get_provider_name(&self) -> &str;
 }
 
 // API client for handling communication with LLM providers
@@ -39,19 +36,9 @@ impl ApiClient {
         Ok(Self { provider })
     }
     
-    // Send a prompt to the provider and return the response
-    pub fn send_prompt(&self, prompt: &str, model: &str) -> Result<String, Box<dyn std::error::Error>> {
-        self.provider.send_prompt(prompt, model, false)
-    }
-    
     // Send a prompt and stream the response
     pub fn stream_prompt(&self, prompt: &str, model: &str) -> Result<String, Box<dyn std::error::Error>> {
         self.provider.send_prompt(prompt, model, true)
-    }
-    
-    // Get the provider name
-    pub fn get_provider_name(&self) -> &str {
-        self.provider.get_provider_name()
     }
 }
 
