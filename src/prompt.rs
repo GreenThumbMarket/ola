@@ -6,6 +6,8 @@ use regex::Regex;
 
 use crate::api::{create_api_client_from_config, format_prompt};
 use crate::utils::{clipboard, output, piping};
+use crate::project::ProjectManager;
+use crate::models::Project;
 
 
 /// Main function for structured reasoning with <think> blocks
@@ -238,6 +240,149 @@ pub fn interactive_iterations(
     
     println!();
     output::print_rainbow(&format!("🎉 Completed {} iterations! 🎉", max_iterations));
+    Ok(())
+}
+
+/// Enhanced prompt building that includes project files, goals, and contexts
+pub fn build_project_prompt(project: &Project, user_prompt: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+    let project_manager = ProjectManager::new()?;
+    let mut prompt_parts = Vec::new();
+    
+    // Add goals section if any goals exist
+    if !project.goals.is_empty() {
+        prompt_parts.push("## Project Goals".to_string());
+        for goal in &project.goals {
+            prompt_parts.push(format!("{}. {}", goal.order + 1, goal.text));
+        }
+        prompt_parts.push("".to_string()); // Empty line
+    }
+    
+    // Add contexts section if any contexts exist
+    if !project.contexts.is_empty() {
+        prompt_parts.push("## Context Information".to_string());
+        for context in &project.contexts {
+            prompt_parts.push(format!("{}. {}", context.order + 1, context.text));
+        }
+        prompt_parts.push("".to_string()); // Empty line
+    }
+    
+    // Add files section if any files exist
+    if !project.files.is_empty() {
+        prompt_parts.push("## Project Files".to_string());
+        
+        for file in &project.files {
+            prompt_parts.push(format!("### File: {}", file.filename));
+            
+            // Try to read file content as text
+            match project_manager.read_file_as_text(&project.id, &file.id) {
+                Ok(Some(content)) => {
+                    // Limit file content to prevent prompt from becoming too large
+                    let content = if content.len() > 10000 {
+                        format!("{}...\n[Content truncated - file is {} bytes]", 
+                               &content[..10000], file.size)
+                    } else {
+                        content
+                    };
+                    
+                    prompt_parts.push("```".to_string());
+                    prompt_parts.push(content);
+                    prompt_parts.push("```".to_string());
+                }
+                Ok(None) => {
+                    prompt_parts.push("[File not found]".to_string());
+                }
+                Err(e) => {
+                    prompt_parts.push(format!("[Error reading file: {}]", e));
+                }
+            }
+            prompt_parts.push("".to_string()); // Empty line between files
+        }
+    }
+    
+    // Add user prompt if provided
+    if let Some(user_input) = user_prompt {
+        if !prompt_parts.is_empty() {
+            prompt_parts.push("## User Request".to_string());
+        }
+        prompt_parts.push(user_input.to_string());
+    }
+    
+    Ok(prompt_parts.join("\n"))
+}
+
+/// Enhanced structured reasoning with project support
+pub fn structure_reasoning_with_project(
+    project_id: Option<&str>,
+    goals: &str,
+    return_type: &str,
+    warnings: &str,
+    clipboard: bool,
+    context: Option<&str>,
+    no_thinking: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let project_manager = ProjectManager::new()?;
+    
+    // Load project or use default
+    let project = if let Some(id) = project_id {
+        project_manager.load_project(id)?.ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, format!("Project not found: {}", id))
+        })?
+    } else {
+        project_manager.get_default_project()?
+    };
+    
+    // Build enhanced prompt with project data
+    let mut enhanced_prompt = build_project_prompt(&project, Some(goals))?;
+    
+    // Add additional context if provided
+    if let Some(ctx) = context {
+        enhanced_prompt = format!("{}\n\nAdditional Context: {}", enhanced_prompt, ctx);
+    }
+    
+    // Try to load settings
+    let settings = crate::settings::Settings::load().unwrap_or_default();
+    
+    // Format the prompt with enhanced content
+    let input_data = format_prompt(&enhanced_prompt, return_type, warnings, None);
+    
+    // Read and append hints if available
+    let mut final_input = input_data;
+    append_hints_if_available(&mut final_input)?;
+    
+    // Load current configuration and create API client
+    let api_client = create_api_client_from_config()?;
+    
+    // Use model from config, settings, or fallback to default
+    let config = crate::config::Config::load()?;
+    let provider_config = config.get_active_provider().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No active provider configured. Run 'ola configure' first.",
+        )
+    })?;
+    
+    let model = provider_config
+        .model
+        .as_deref()
+        .unwrap_or(&settings.default_model);
+    println!("Using model: {} with project: {}", model, project.name);
+    
+    // Stream the response
+    let response = stream_response(&api_client, &final_input, model, no_thinking)?;
+    
+    // Handle clipboard copy if requested
+    if clipboard {
+        match clipboard::copy_to_clipboard(&response) {
+            Ok(_) => output::print_success("Response copied to clipboard"),
+            Err(e) => output::print_error(&format!("Failed to copy to clipboard: {}", e))
+        }
+    }
+    
+    // Log session if enabled in settings
+    if settings.behavior.enable_logging {
+        log_session(&enhanced_prompt, return_type, warnings, model, &response)?;
+    }
+    
     Ok(())
 }
 

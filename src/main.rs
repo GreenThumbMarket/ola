@@ -11,11 +11,14 @@ use dialoguer::{theme::ColorfulTheme, Input, Select, Confirm};
 use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write;
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 // Core modules
 mod config;
 mod prompt;
 mod settings;
+mod models;
+mod project;
 
 // API communication layer
 mod api;
@@ -178,6 +181,136 @@ enum Commands {
         #[arg(short, long)]
         reset: bool,
     },
+    /// Project management commands  
+    Project {
+        #[command(subcommand)]
+        command: Option<ProjectCommands>,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ProjectCommands {
+    /// List all projects (default action)
+    #[command(alias = "ls")]
+    List,
+    /// Create a new project
+    Create {
+        /// Project name (optional, will prompt if not provided)
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    /// Delete a project
+    #[command(alias = "rm")]
+    Delete {
+        /// Project name to delete (optional, will prompt if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Force deletion without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Edit project details
+    Edit {
+        /// Project name to edit (optional, will prompt if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// New project name
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    /// Set active project
+    Set {
+        /// Project name to set as active (optional, will prompt if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Show project details
+    Show {
+        /// Project name (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Upload a file to a project
+    Upload {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// File path to upload
+        #[arg(short, long)]
+        file: String,
+    },
+    /// List files in a project
+    Files {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Add a goal to a project
+    AddGoal {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Goal text
+        #[arg(short, long)]
+        goal: String,
+    },
+    /// Remove a goal from a project
+    RemoveGoal {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Goal ID to remove
+        #[arg(short, long)]
+        goal_id: String,
+    },
+    /// Add context to a project
+    AddContext {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Context text
+        #[arg(short, long)]
+        context: String,
+    },
+    /// Remove context from a project
+    RemoveContext {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Context ID to remove
+        #[arg(short, long)]
+        context_id: String,
+    },
+    /// Remove a file from a project
+    RemoveFile {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// File ID to remove
+        #[arg(short, long)]
+        file_id: String,
+    },
+    /// Run a prompt with project context
+    Run {
+        /// Project name (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Prompt text
+        #[arg(short = 'g', long)]
+        goals: String,
+        /// Return format
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+        /// Warnings
+        #[arg(short, long, default_value = "")]
+        warnings: String,
+        /// Copy to clipboard
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+        /// Hide thinking blocks
+        #[arg(short = 't', long)]
+        no_thinking: bool,
+    },
 }
 
 fn main() {
@@ -219,6 +352,9 @@ fn main() {
         }
         Some(Commands::Settings { view, default_model, default_format, logging, log_file, reset }) => {
             manage_settings(*view, default_model.clone(), default_format.clone(), *logging, log_file.clone(), *reset);
+        }
+        Some(Commands::Project { command }) => {
+            handle_project_command(command.as_ref().unwrap_or(&ProjectCommands::List));
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -982,6 +1118,868 @@ fn list_models(provider: Option<String>, quiet: bool) {
         _ => {
             eprintln!("Unsupported provider: {}", provider_name);
             std::process::exit(1);
+        }
+    }
+}
+
+/// Handle project management commands
+fn handle_project_command(command: &ProjectCommands) {
+    use project::ProjectManager;
+    use models::{Goal, Context};
+    
+    let project_manager = match ProjectManager::new() {
+        Ok(pm) => pm,
+        Err(e) => {
+            eprintln!("Failed to initialize project manager: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Helper function to resolve project name/ID with guided selection
+    let resolve_project_with_guidance = |project_name: Option<&String>, action_description: &str| -> anyhow::Result<String> {
+        match project_name {
+            Some(name) => {
+                // Find project by name
+                let projects = project_manager.list_projects()?;
+                if let Some(proj) = projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                    Ok(proj.id.clone())
+                } else {
+                    Err(anyhow::anyhow!("Project '{}' not found", name))
+                }
+            }
+            None => {
+                // Interactive project selection
+                let projects = project_manager.list_projects()?;
+                if projects.is_empty() {
+                    return Err(anyhow::anyhow!("No projects available. Create one first with 'ola project create --name <name>'"));
+                }
+                
+                let project_names: Vec<String> = projects.iter().map(|p| {
+                    let active_marker = if let Ok(Some(active_id)) = project_manager.get_active_project() {
+                        if active_id == p.id { " (active)" } else { "" }
+                    } else { "" };
+                    format!("{}{}", p.name, active_marker)
+                }).collect();
+                
+                let selected_idx = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt(&format!("Select project to {}", action_description))
+                    .items(&project_names)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| anyhow::anyhow!("Selection failed: {}", e))?;
+                
+                Ok(projects[selected_idx].id.clone())
+            }
+        }
+    };
+
+    match command {
+        ProjectCommands::List => {
+            let active_project_id = project_manager.get_active_project().unwrap_or(None);
+            
+            match project_manager.list_projects() {
+                Ok(projects) => {
+                    if projects.is_empty() {
+                        println!("No projects found. Create one with 'ola project create --name <name>'");
+                    } else {
+                        println!("Projects:");
+                        
+                        let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+                        
+                        for project in projects {
+                            let is_active = active_project_id.as_ref() == Some(&project.id);
+                            
+                            if is_active {
+                                let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true));
+                                print!("* ");
+                            } else {
+                                let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)));
+                                print!("  ");
+                            }
+                            
+                            println!("{} - {} ({} files, {} goals, {} contexts)", 
+                                   project.id, 
+                                   project.name, 
+                                   project.files.len(),
+                                   project.goals.len(),
+                                   project.contexts.len());
+                            
+                            let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)).set_dimmed(true));
+                            println!("    Updated: {}", project.updated_at.format("%Y-%m-%d %H:%M:%S"));
+                            let _ = stdout.reset();
+                        }
+                        
+                        if let Some(active_id) = active_project_id {
+                            let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_dimmed(true));
+                            println!("\nActive project: {}", active_id);
+                            let _ = stdout.reset();
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to list projects: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Create { name } => {
+            println!("🚀 Welcome to Ola Project Creation!");
+            
+            // Get project name - from CLI arg or prompt
+            let project_name = match name {
+                Some(n) => n.clone(),
+                None => {
+                    Input::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Project name")
+                        .interact_text()
+                        .map_err(|e| {
+                            eprintln!("Input failed: {}", e);
+                            std::process::exit(1);
+                        })
+                        .unwrap()
+                }
+            };
+            
+            // Check if project with this name already exists
+            let existing_projects = match project_manager.list_projects() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Failed to check existing projects: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            if existing_projects.iter().any(|p| p.name.eq_ignore_ascii_case(&project_name)) {
+                eprintln!("A project named '{}' already exists. Please choose a different name.", project_name);
+                std::process::exit(1);
+            }
+            
+            match project_manager.create_project(project_name.clone()) {
+                Ok(project) => {
+                    println!("✅ Created project '{}' with ID: {}", project.name, project.id);
+                    println!("   Project directory: ~/.ola/data/projects/{}", project.id);
+                    
+                    // Set as active project if no active project is set or if user confirms
+                    let should_set_active = if project_manager.get_active_project().unwrap_or(None).is_none() {
+                        true
+                    } else {
+                        Confirm::with_theme(&ColorfulTheme::default())
+                            .with_prompt(&format!("Set '{}' as active project?", project.name))
+                            .default(true)
+                            .interact()
+                            .unwrap_or(false)
+                    };
+                    
+                    if should_set_active {
+                        if let Err(e) = project_manager.set_active_project(&project.id) {
+                            eprintln!("Warning: Failed to set as active project: {}", e);
+                        } else {
+                            println!("   Set as active project");
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to create project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::Delete { project, force } => {
+            let project_id = match resolve_project_with_guidance(project.as_ref(), "delete") {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Get project details for confirmation
+            let project_name = match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => proj.name,
+                Ok(None) => {
+                    eprintln!("Project not found");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            if !force {
+                let confirmation = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt(&format!("Are you sure you want to delete project '{}'? This cannot be undone.", project_name))
+                    .default(false)
+                    .interact()
+                    .unwrap();
+                
+                if !confirmation {
+                    println!("Deletion cancelled");
+                    return;
+                }
+            }
+            
+            match project_manager.delete_project(&project_id) {
+                Ok(_) => {
+                    println!("✅ Deleted project '{}'", project_name);
+                    
+                    // Clear active project if it was the deleted one
+                    if let Ok(Some(active)) = project_manager.get_active_project() {
+                        if active == project_id {
+                            let active_file = std::env::var("HOME")
+                                .map(|h| std::path::PathBuf::from(h).join(".ola").join("active_project"))
+                                .unwrap_or_default();
+                            let _ = std::fs::remove_file(&active_file);
+                            println!("   Cleared as active project");
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to delete project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Edit { project, name } => {
+            let project_id = match resolve_project_with_guidance(project.as_ref(), "edit") {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Get current project details
+            let current_project = match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => proj,
+                Ok(None) => {
+                    eprintln!("Project not found");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            let old_name = current_project.name.clone();
+            
+            // Get new name - from CLI arg or prompt
+            let new_name = match name {
+                Some(n) => n.clone(),
+                None => {
+                    Input::with_theme(&ColorfulTheme::default())
+                        .with_prompt("New project name")
+                        .default(old_name.clone())
+                        .interact_text()
+                        .map_err(|e| {
+                            eprintln!("Input failed: {}", e);
+                            std::process::exit(1);
+                        })
+                        .unwrap()
+                }
+            };
+            
+            if new_name != old_name {
+                match project_manager.edit_project(&project_id, Some(new_name.clone())) {
+                    Ok(_) => {
+                        println!("✅ Updated project name from '{}' to '{}'", old_name, new_name);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to edit project: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                println!("No changes made to project '{}'", old_name);
+            }
+        }
+        
+        ProjectCommands::Set { project } => {
+            let project_id = match resolve_project_with_guidance(project.as_ref(), "set as active") {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            let project_name = match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => proj.name,
+                Ok(None) => {
+                    eprintln!("Project not found");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            match project_manager.set_active_project(&project_id) {
+                Ok(_) => {
+                    println!("✅ Set '{}' as active project", project_name);
+                }
+                Err(e) => {
+                    eprintln!("Failed to set active project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Upload { project, file } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match std::fs::read(file) {
+                Ok(content) => {
+                    let filename = std::path::Path::new(file)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    
+                    match project_manager.upload_file(&project_id, filename, &content) {
+                        Ok(file_obj) => {
+                            // Update project with new file
+                            if let Ok(Some(mut proj)) = project_manager.load_project(&project_id) {
+                                proj.add_file(file_obj.clone());
+                                if let Err(e) = project_manager.save_project(&proj) {
+                                    eprintln!("Warning: Failed to save project: {}", e);
+                                }
+                                println!("✅ Uploaded file '{}' to project '{}'", file_obj.filename, proj.name);
+                            } else {
+                                println!("✅ Uploaded file '{}' to project '{}'", file_obj.filename, project_id);
+                            }
+                            println!("   File ID: {}", file_obj.id);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to upload file: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to read file '{}': {}", file, e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::Files { project } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => {
+                    if proj.files.is_empty() {
+                        println!("No files in project '{}'", proj.name);
+                    } else {
+                        println!("Files in project '{}':", proj.name);
+                        for file in &proj.files {
+                            println!("  {} - {} ({} bytes, {})", 
+                                   file.id, 
+                                   file.filename,
+                                   file.size,
+                                   file.uploaded_at.format("%Y-%m-%d %H:%M:%S"));
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::AddGoal { project, goal } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            // Load or create project
+            let mut proj = match project_manager.load_project(&project_id) {
+                Ok(Some(p)) => p,
+                Ok(None) if project_id == "default" => {
+                    match project_manager.get_default_project() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to create default project: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            let order = proj.goals.len() as u32;
+            let goal_obj = Goal::new(goal.clone(), order);
+            proj.add_goal(goal_obj.clone());
+
+            match project_manager.save_project(&proj) {
+                Ok(_) => {
+                    println!("✅ Added goal to project '{}': {}", proj.name, goal);
+                    println!("   Goal ID: {}", goal_obj.id);
+                }
+                Err(e) => {
+                    eprintln!("Failed to save project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::RemoveGoal { project, goal_id } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(mut proj)) => {
+                    if proj.remove_goal(goal_id) {
+                        match project_manager.save_project(&proj) {
+                            Ok(_) => {
+                                println!("✅ Removed goal '{}' from project '{}'", goal_id, proj.name);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to save project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("Goal '{}' not found in project '{}'", goal_id, proj.name);
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::AddContext { project, context } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            // Load or create project
+            let mut proj = match project_manager.load_project(&project_id) {
+                Ok(Some(p)) => p,
+                Ok(None) if project_id == "default" => {
+                    match project_manager.get_default_project() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to create default project: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            let order = proj.contexts.len() as u32;
+            let context_obj = Context::new(context.clone(), order);
+            proj.add_context(context_obj.clone());
+
+            match project_manager.save_project(&proj) {
+                Ok(_) => {
+                    println!("✅ Added context to project '{}': {}", proj.name, context);
+                    println!("   Context ID: {}", context_obj.id);
+                }
+                Err(e) => {
+                    eprintln!("Failed to save project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::RemoveContext { project, context_id } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(mut proj)) => {
+                    if proj.remove_context(context_id) {
+                        match project_manager.save_project(&proj) {
+                            Ok(_) => {
+                                println!("✅ Removed context '{}' from project '{}'", context_id, proj.name);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to save project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("Context '{}' not found in project '{}'", context_id, proj.name);
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::RemoveFile { project, file_id } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(mut proj)) => {
+                    // Remove from project metadata
+                    if proj.remove_file(file_id) {
+                        // Also delete the actual file
+                        if let Err(e) = project_manager.delete_file(&project_id, file_id) {
+                            eprintln!("Warning: Failed to delete file from disk: {}", e);
+                        }
+                        
+                        match project_manager.save_project(&proj) {
+                            Ok(_) => {
+                                println!("✅ Removed file '{}' from project '{}'", file_id, proj.name);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to save project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("File '{}' not found in project '{}'", file_id, proj.name);
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Show { project } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => {
+                    println!("Project Details:");
+                    println!("  Name: {}", proj.name);
+                    println!("  ID: {}", proj.id);
+                    println!("  Created: {}", proj.created_at.format("%Y-%m-%d %H:%M:%S"));
+                    println!("  Updated: {}", proj.updated_at.format("%Y-%m-%d %H:%M:%S"));
+                    
+                    println!("\nGoals ({}):", proj.goals.len());
+                    for goal in &proj.goals {
+                        println!("  {}. {} (ID: {})", goal.order + 1, goal.text, goal.id);
+                    }
+                    
+                    println!("\nContexts ({}):", proj.contexts.len());
+                    for context in &proj.contexts {
+                        println!("  {}. {} (ID: {})", context.order + 1, context.text, context.id);
+                    }
+                    
+                    println!("\nFiles ({}):", proj.files.len());
+                    for file in &proj.files {
+                        println!("  {} - {} ({} bytes)", file.filename, file.id, file.size);
+                    }
+                }
+                Ok(None) => {
+                    if project_id == "default" {
+                        println!("No default project exists. Creating one...");
+                        match project_manager.get_default_project() {
+                            Ok(proj) => {
+                                println!("✅ Created default project");
+                                println!("  Name: {}", proj.name);
+                                println!("  ID: {}", proj.id);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to create default project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("Project '{}' not found", project_id);
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::Run { project, goals, format, warnings, clipboard, no_thinking } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => Some(proj.id.clone()),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project if available
+                    project_manager.get_active_project().unwrap_or(None)
+                }
+            };
+            
+            match prompt::structure_reasoning_with_project(
+                project_id.as_deref(),
+                goals,
+                format,
+                warnings,
+                *clipboard,
+                None,
+                *no_thinking,
+            ) {
+                Ok(_) => {
+                    // Success
+                }
+                Err(e) => {
+                    eprintln!("Failed to run prompt with project: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
