@@ -1090,6 +1090,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "console",
  "dialoguer",
  "env_logger",
  "indicatif",

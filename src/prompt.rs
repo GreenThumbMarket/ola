@@ -44,7 +44,7 @@ pub fn structure_reasoning(
         .model
         .as_deref()
         .unwrap_or(&settings.default_model);
-    println!("Using model: {}", model);
+    output::println_colored(&format!("🧠 Using model: {}", model), output::Color::BrightBlue);
     
     // Stream the response
     let response = stream_response(&api_client, &input_data, model, no_thinking)?;
@@ -101,7 +101,7 @@ pub fn stream_non_think(
         .model
         .as_deref()
         .unwrap_or(&settings.default_model);
-    println!("Using model: {}", model);
+    output::println_colored(&format!("🧠 Using model: {}", model), output::Color::BrightBlue);
     
     // Stream the response
     let response = stream_response(&api_client, &input_data, model, filter_thinking)?;
@@ -138,11 +138,24 @@ fn stream_response(
     model: &str,
     filter_thinking: bool
 ) -> Result<String, Box<dyn std::error::Error>> {
+    // Show loading animation while waiting for response
+    output::print_wave_animation(0, "Generating response");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    
+    // Add some visual feedback for the request
+    output::clear_line();
+    output::println_colored("⚡ Sending prompt to AI...", output::Color::BrightYellow);
+    
     // Get the raw response
     let response = api_client.stream_prompt(prompt, model)?;
     
+    // Clear and show completion
+    output::println_colored("✨ Response received!", output::Color::BrightGreen);
+    println!(); // Add some space before output
+    
     // If we need to filter thinking blocks, process the response
     if filter_thinking {
+        output::println_colored("🔄 Filtering thinking blocks...", output::Color::BrightCyan);
         // Use regex to remove thinking blocks
         let re = Regex::new(r"<think>.*?</think>")?;
         let filtered_response = re.replace_all(&response, "").to_string();
@@ -234,7 +247,10 @@ pub fn interactive_iterations(
         // In a more advanced version, we could collect feedback between iterations
         if iteration < max_iterations {
             println!();
-            output::println_colored(&format!("Completed iteration {} of {}", iteration, max_iterations), output::Color::BrightGreen);
+            output::print_success(&format!("Completed iteration {} of {}", iteration, max_iterations));
+            output::print_wave_animation(iteration as usize, "Preparing next iteration...");
+            std::thread::sleep(std::time::Duration::from_millis(800));
+            output::clear_line();
         }
     }
     
@@ -365,7 +381,7 @@ pub fn structure_reasoning_with_project(
         .model
         .as_deref()
         .unwrap_or(&settings.default_model);
-    println!("Using model: {} with project: {}", model, project.name);
+    output::println_colored(&format!("🧠 Using model: {} with project: {}", model, project.name), output::Color::BrightBlue);
     
     // Stream the response
     let response = stream_response(&api_client, &final_input, model, no_thinking)?;

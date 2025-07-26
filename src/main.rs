@@ -25,6 +25,7 @@ mod api;
 
 // Utility modules
 mod utils;
+mod console_utils;
 
 #[derive(Parser)]
 #[command(name = "ola")]
@@ -185,6 +186,18 @@ enum Commands {
     Project {
         #[command(subcommand)]
         command: Option<ProjectCommands>,
+    },
+    /// Console features demonstration
+    Console {
+        /// Show a simple demo of console features
+        #[arg(short, long)]
+        demo: bool,
+        /// Show loading animation with custom message
+        #[arg(short, long)]
+        loading: Option<String>,
+        /// Duration for loading animation in milliseconds
+        #[arg(long, default_value = "3000")]
+        duration: u64,
     },
 }
 
@@ -355,6 +368,9 @@ fn main() {
         }
         Some(Commands::Project { command }) => {
             handle_project_command(command.as_ref().unwrap_or(&ProjectCommands::List));
+        }
+        Some(Commands::Console { demo, loading, duration }) => {
+            handle_console_command(*demo, loading.clone(), *duration);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -709,7 +725,9 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         
         eprintln!("{}[RECURSION WAVE {}]{}  Processing...", color, wave_number, reset);
     } else if !quiet {
-        utils::output::print_rainbow("🌊 Welcome to the Ola CLI Prompt! 🌊");
+        utils::output::startup_animation();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        utils::output::print_banner("🌊 Prompt Mode Activated 🌊", utils::output::Color::DeepSkyBlue);
     }
     
     // Read from stdin if pipe mode is enabled
@@ -729,11 +747,18 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         // Use piped content as goals if no explicit goals were provided
         piped_content.clone()
     } else {
-        Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("🏆 Goals: ")
-            .default("Anonymous".into())
-            .interact_text()
-            .unwrap()
+        {
+            if !quiet {
+                utils::output::print_wave_animation(0, "Awaiting your goals...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("🏆 Goals: ")
+                .default("Anonymous".into())
+                .interact_text()
+                .unwrap()
+        }
     };
 
     // If goals were provided via CLI, use the CLI args for format and warnings too
@@ -741,19 +766,33 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     let (format, warnings) = if cli_goals_provided || !piped_content.is_empty() {
         (cli_format.to_string(), cli_warnings.to_string())
     } else {
-        // Prompt for return format
-        let format = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("📝 Return Format: ")
-            .default("text".into())
-            .interact_text()
-            .unwrap();
+        // Prompt for return format with animation
+        let format = {
+            if !quiet {
+                utils::output::print_wave_animation(1, "Setting output format...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("📝 Return Format: ")
+                .default("text".into())
+                .interact_text()
+                .unwrap()
+        };
         
-        // Prompt for warnings
-        let warnings = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("⚠️ Warnings: ")
-            .default("".into())
-            .interact_text()
-            .unwrap();
+        // Prompt for warnings with animation
+        let warnings = {
+            if !quiet {
+                utils::output::print_wave_animation(2, "Adding warnings...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("⚠️ Warnings: ")
+                .default("".into())
+                .interact_text()
+                .unwrap()
+        };
         
         (format, warnings)
     };
@@ -778,19 +817,24 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     };
 
     if !quiet {
-        eprintln!(
-            "Goals: {}\nReturn Format: {}\nWarnings: {}",
-            final_goals, format, warnings
-        );
-        if let Some(ctx) = context {
-            eprintln!("Context from stdin: {} characters", ctx.len());
+        utils::output::println_colored("📋 Prompt Summary:", utils::output::Color::BrightCyan);
+        utils::output::println_colored(&format!("🏆 Goals: {}", final_goals), utils::output::Color::BrightYellow);
+        utils::output::println_colored(&format!("📝 Return Format: {}", format), utils::output::Color::BrightGreen);
+        if !warnings.is_empty() {
+            utils::output::println_colored(&format!("⚠️  Warnings: {}", warnings), utils::output::Color::Orange);
         }
+        if let Some(ctx) = context {
+            utils::output::println_colored(&format!("📄 Context from stdin: {} characters", ctx.len()), utils::output::Color::Purple);
+        }
+        println!(); // Add space before processing
     }
     
     match output {
         Ok(()) => {
             if !quiet {
-                eprintln!("Prompt executed successfully");
+                println!();
+                utils::output::print_success("Prompt executed successfully! ✨");
+                println!();
             }
             
             // Handle recursion if enabled and we haven't reached the limit
@@ -800,7 +844,10 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
                     let next_wave = wave_number + 1;
                     
                     if !quiet {
-                        eprintln!("Launching recursion wave {}...", next_wave);
+                        utils::output::print_wave_animation(next_wave as usize, &format!("Launching recursion wave {}...", next_wave));
+                        std::thread::sleep(std::time::Duration::from_millis(800));
+                        utils::output::clear_line();
+                        utils::output::println_colored(&format!("🌊 Launching recursion wave {}...", next_wave), utils::output::Color::DeepSkyBlue);
                     }
                     
                     // Build the command to execute the next wave
@@ -852,17 +899,18 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
                         }
                     }
                 } else if !quiet {
-                    eprintln!("Reached maximum recursion depth ({} waves)", max_waves);
+                    utils::output::print_rainbow(&format!("🏁 Reached maximum recursion depth ({} waves) 🏁", max_waves));
                 }
             }
         },
-        Err(e) => eprintln!("Prompt returned error: {:?}", e),
+        Err(e) => utils::output::print_error(&format!("Prompt execution failed: {:?}", e)),
     }
 }
 
 fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe: bool, filter_thinking: bool) {
     if !quiet {
-        eprintln!("Running direct prompt without thinking steps...");
+        utils::output::print_banner("🧠 Direct Mode Activated 🧠", utils::output::Color::Purple);
+        utils::output::println_colored("Running direct prompt without thinking steps...", utils::output::Color::BrightMagenta);
     }
 
     // Read from stdin if pipe mode is enabled
@@ -882,11 +930,18 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
         // Use piped content as prompt if no explicit prompt was provided
         piped_content.clone()
     } else {
-        Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("Enter your prompt: ")
-            .default("".into())
-            .interact_text()
-            .unwrap()
+        {
+            if !quiet {
+                utils::output::print_wave_animation(0, "Awaiting your direct prompt...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("💭 Enter your prompt: ")
+                .default("".into())
+                .interact_text()
+                .unwrap()
+        }
     };
 
     // If we have piped content but also explicit prompt, use piped content as context
@@ -904,17 +959,20 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
 
     if !quiet {
         if let Some(ctx) = context {
-            eprintln!("Context from stdin: {} characters", ctx.len());
+            utils::output::println_colored(&format!("📄 Context from stdin: {} characters", ctx.len()), utils::output::Color::Purple);
         }
+        println!(); // Add space before processing
     }
     
     match output {
         Ok(()) => {
             if !quiet {
-                eprintln!("Non-think prompt executed successfully");
+                println!();
+                utils::output::print_success("Direct prompt executed successfully! ⚡");
+                println!();
             }
         },
-        Err(e) => eprintln!("Prompt returned error: {:?}", e),
+        Err(e) => utils::output::print_error(&format!("Prompt execution failed: {:?}", e)),
     }
 }
 
@@ -1981,5 +2039,35 @@ fn handle_project_command(command: &ProjectCommands) {
                 }
             }
         }
+    }
+}
+
+/// Handle console command demonstrations
+fn handle_console_command(demo: bool, loading: Option<String>, duration: u64) {
+    if demo {
+        println!("🖥️  Console Features Demo");
+        println!("Running the basic console example...\n");
+        
+        if let Err(e) = console_utils::demo_console_features() {
+            eprintln!("Console demo failed: {}", e);
+            std::process::exit(1);
+        }
+        
+        println!("Demo completed!");
+    }
+    
+    if let Some(ref message) = loading {
+        if let Err(e) = console_utils::loading_animation(message, duration) {
+            eprintln!("Loading animation failed: {}", e);
+            std::process::exit(1);
+        }
+        println!("✅ Loading complete!");
+    }
+    
+    if !demo && loading.is_none() {
+        println!("Console utilities available. Use --demo or --loading <message> to see examples.");
+        println!("Examples:");
+        println!("  ola console --demo");
+        println!("  ola console --loading \"Processing data\" --duration 5000");
     }
 }

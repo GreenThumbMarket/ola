@@ -36,6 +36,7 @@ regex = "1"
 atty = "0.2"         # Detect if stdin/stdout is a terminal
 indicatif = "0.17"   # Progress indicators
 termcolor = "1.4"    # Terminal color support
+console = "0.15"     # Console manipulation and styling
 
 # UUID generation
 uuid = { version = "1.0", features = ["v4"] }
