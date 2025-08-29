@@ -18,12 +18,6 @@ pub fn read_from_stdin() -> String {
     }
 }
 
-/// Check if the program is receiving piped input
-pub fn is_receiving_pipe() -> bool {
-    // This is a simple check to see if stdin is connected to a terminal
-    // If it's not, it might be receiving piped input
-    !atty::is(atty::Stream::Stdin)
-}
 
 /// Append an entry to a log file in JSON Lines format
 pub fn append_to_log(filename: &str, entry: &str) -> io::Result<()> {

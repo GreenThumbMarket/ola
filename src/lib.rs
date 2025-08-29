@@ -5,6 +5,8 @@
 pub mod config;
 pub mod prompt;
 pub mod settings;
+pub mod models;
+pub mod project;
 
 // API communication layer
 pub mod api;
@@ -16,4 +18,5 @@ pub mod utils;
 pub use config::{Config, ProviderConfig};
 pub use settings::Settings;
 pub use api::ApiClient;
-pub use prompt::PromptResult;
+pub use models::{Project, ProjectFile, Goal, Context};
+pub use project::ProjectManager;

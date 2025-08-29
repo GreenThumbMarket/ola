@@ -7,21 +7,25 @@
 
 use chrono::Utc;
 use clap::Parser;
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Input, Select, Confirm};
 use serde_json::json;
 use std::fs::OpenOptions;
 use std::io::Write;
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 // Core modules
 mod config;
 mod prompt;
 mod settings;
+mod models;
+mod project;
 
 // API communication layer
 mod api;
 
 // Utility modules
 mod utils;
+mod console_utils;
 
 #[derive(Parser)]
 #[command(name = "ola")]
@@ -178,6 +182,148 @@ enum Commands {
         #[arg(short, long)]
         reset: bool,
     },
+    /// Project management commands  
+    Project {
+        #[command(subcommand)]
+        command: Option<ProjectCommands>,
+    },
+    /// Console features demonstration
+    Console {
+        /// Show a simple demo of console features
+        #[arg(short, long)]
+        demo: bool,
+        /// Show loading animation with custom message
+        #[arg(short, long)]
+        loading: Option<String>,
+        /// Duration for loading animation in milliseconds
+        #[arg(long, default_value = "3000")]
+        duration: u64,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ProjectCommands {
+    /// List all projects (default action)
+    #[command(alias = "ls")]
+    List,
+    /// Create a new project
+    Create {
+        /// Project name (optional, will prompt if not provided)
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    /// Delete a project
+    #[command(alias = "rm")]
+    Delete {
+        /// Project name to delete (optional, will prompt if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Force deletion without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Edit project details
+    Edit {
+        /// Project name to edit (optional, will prompt if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// New project name
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    /// Set active project
+    Set {
+        /// Project name to set as active (optional, will prompt if not provided)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Show project details
+    Show {
+        /// Project name (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Upload a file to a project
+    Upload {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// File path to upload
+        #[arg(short, long)]
+        file: String,
+    },
+    /// List files in a project
+    Files {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+    },
+    /// Add a goal to a project
+    AddGoal {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Goal text
+        #[arg(short, long)]
+        goal: String,
+    },
+    /// Remove a goal from a project
+    RemoveGoal {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Goal ID to remove
+        #[arg(short, long)]
+        goal_id: String,
+    },
+    /// Add context to a project
+    AddContext {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Context text
+        #[arg(short, long)]
+        context: String,
+    },
+    /// Remove context from a project
+    RemoveContext {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Context ID to remove
+        #[arg(short, long)]
+        context_id: String,
+    },
+    /// Remove a file from a project
+    RemoveFile {
+        /// Project ID (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// File ID to remove
+        #[arg(short, long)]
+        file_id: String,
+    },
+    /// Run a prompt with project context
+    Run {
+        /// Project name (optional, uses active if not specified)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Prompt text
+        #[arg(short = 'g', long)]
+        goals: String,
+        /// Return format
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+        /// Warnings
+        #[arg(short, long, default_value = "")]
+        warnings: String,
+        /// Copy to clipboard
+        #[arg(short = 'c', long)]
+        clipboard: bool,
+        /// Hide thinking blocks
+        #[arg(short = 't', long)]
+        no_thinking: bool,
+    },
 }
 
 fn main() {
@@ -220,6 +366,12 @@ fn main() {
         Some(Commands::Settings { view, default_model, default_format, logging, log_file, reset }) => {
             manage_settings(*view, default_model.clone(), default_format.clone(), *logging, log_file.clone(), *reset);
         }
+        Some(Commands::Project { command }) => {
+            handle_project_command(command.as_ref().unwrap_or(&ProjectCommands::List));
+        }
+        Some(Commands::Console { demo, loading, duration }) => {
+            handle_console_command(*demo, loading.clone(), *duration);
+        }
         Some(Commands::Configure {
             provider: cli_provider,
             api_key: cli_api_key,
@@ -227,6 +379,41 @@ fn main() {
         }) => {
             // Interactive configuration mode with colorful banner
             utils::output::print_banner("🤖 Welcome to Ola Interactive Configuration! 🤖", utils::output::Color::DeepSkyBlue);
+
+            // Check for auto-detection from environment variables first
+            if let Some(detected_config) = config::detect_provider_from_env() {
+                println!("🔍 Auto-detected configuration from environment variables:");
+                println!("   Provider: {}", detected_config.provider);
+                println!("   Model: {}", detected_config.model.as_ref().unwrap_or(&"default".to_string()));
+                
+                let confirm = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Use this configuration?")
+                    .default(true)
+                    .interact()
+                    .unwrap();
+                
+                if confirm {
+                    // Validate the auto-detected configuration
+                    println!("Validating auto-detected configuration...");
+                    if let Err(e) = config::validate_provider_config(&detected_config) {
+                        eprintln!("❌ Invalid auto-detected configuration: {}", e);
+                        std::process::exit(1);
+                    }
+                    
+                    // Save auto-detected configuration
+                    config::add_provider(detected_config.clone());
+                    if let Err(e) = config::save() {
+                        eprintln!("Failed to save configuration: {}", e);
+                        std::process::exit(1);
+                    }
+                    
+                    println!("✅ Auto-detected configuration saved for provider: {}", detected_config.provider);
+                    if let Some(model) = detected_config.model {
+                        println!("Using model: {}", model);
+                    }
+                    return;
+                }
+            }
 
             // Provider selection - use command line arg if provided, otherwise ask
             let provider_name = if let Some(p) = cli_provider.clone() {
@@ -242,29 +429,64 @@ fn main() {
                 providers[selected_idx].to_string()
             };
 
-            // API Key handling based on provider and CLI args
+            // API Key handling - check environment first, then CLI args, then prompt
             let api_key = if let Some(key) = cli_api_key.clone() {
                 key
             } else {
-                match provider_name.as_str() {
-                    "Ollama" => {
-                        utils::output::println_colored("🏠 No API key needed for Ollama (using local instance)", utils::output::Color::BrightGreen);
-                        String::new()
+                // Check environment variables first
+                let env_key = match provider_name.as_str() {
+                    "OpenAI" => std::env::var("OPENAI_API_KEY").ok(),
+                    "Anthropic" => std::env::var("ANTHROPIC_API_KEY").ok(),
+                    "Gemini" => std::env::var("GEMINI_API_KEY").ok(),
+                    _ => None,
+                };
+                
+                if let Some(key) = env_key {
+                    if !key.trim().is_empty() {
+                        println!("🔍 Using API key from environment variable");
+                        key
+                    } else {
+                        // Prompt for API key if env var is empty
+                        match provider_name.as_str() {
+                            "Ollama" => {
+                                println!("No API key needed for Ollama (using local instance)");
+                                String::new()
+                            }
+                            "Gemini" => {
+                                println!("For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)");
+                                dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                    .with_prompt("Google API Key")
+                                    .interact()
+                                    .unwrap()
+                            }
+                            _ => {
+                                dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                    .with_prompt(format!("{} API Key", provider_name))
+                                    .interact()
+                                    .unwrap()
+                            }
+                        }
                     }
-                    "Gemini" => {
-                        // Use Password input for secure API key entry
-                        utils::output::println_colored("🧠 For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)", utils::output::Color::BrightYellow);
-                        dialoguer::Password::with_theme(&ColorfulTheme::default())
-                            .with_prompt("Google API Key")
-                            .interact()
-                            .unwrap()
-                    }
-                    _ => {
-                        // Use Password input for secure API key entry
-                        dialoguer::Password::with_theme(&ColorfulTheme::default())
-                            .with_prompt(format!("{} API Key", provider_name))
-                            .interact()
-                            .unwrap()
+                } else {
+                    // No env var found, prompt for API key
+                    match provider_name.as_str() {
+                        "Ollama" => {
+                            println!("No API key needed for Ollama (using local instance)");
+                            String::new()
+                        }
+                        "Gemini" => {
+                            println!("For Gemini, you need an API key from Google AI Studio (https://aistudio.google.com/)");
+                            dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                .with_prompt("Google API Key")
+                                .interact()
+                                .unwrap()
+                        }
+                        _ => {
+                            dialoguer::Password::with_theme(&ColorfulTheme::default())
+                                .with_prompt(format!("{} API Key", provider_name))
+                                .interact()
+                                .unwrap()
+                        }
                     }
                 }
             };
@@ -275,7 +497,7 @@ fn main() {
             } else {
                 match provider_name.as_str() {
                     "OpenAI" => {
-                        let models = vec!["gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"];
+                        let models = vec!["gpt-5", "gpt-4o", "gpt-4", "o3", "o3-pro", "o4", "o4-mini", "o4-mini-high"];
                         let idx = Select::with_theme(&ColorfulTheme::default())
                             .with_prompt("Model")
                             .items(&models)
@@ -503,7 +725,9 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         
         eprintln!("{}[RECURSION WAVE {}]{}  Processing...", color, wave_number, reset);
     } else if !quiet {
-        utils::output::print_rainbow("🌊 Welcome to the Ola CLI Prompt! 🌊");
+        utils::output::startup_animation();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        utils::output::print_banner("🌊 Prompt Mode Activated 🌊", utils::output::Color::DeepSkyBlue);
     }
     
     // Read from stdin if pipe mode is enabled
@@ -523,11 +747,18 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
         // Use piped content as goals if no explicit goals were provided
         piped_content.clone()
     } else {
-        Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("🏆 Goals: ")
-            .default("Anonymous".into())
-            .interact_text()
-            .unwrap()
+        {
+            if !quiet {
+                utils::output::print_wave_animation(0, "Awaiting your goals...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("🏆 Goals: ")
+                .default("Anonymous".into())
+                .interact_text()
+                .unwrap()
+        }
     };
 
     // If goals were provided via CLI, use the CLI args for format and warnings too
@@ -535,19 +766,33 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     let (format, warnings) = if cli_goals_provided || !piped_content.is_empty() {
         (cli_format.to_string(), cli_warnings.to_string())
     } else {
-        // Prompt for return format
-        let format = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("📝 Return Format: ")
-            .default("text".into())
-            .interact_text()
-            .unwrap();
+        // Prompt for return format with animation
+        let format = {
+            if !quiet {
+                utils::output::print_wave_animation(1, "Setting output format...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("📝 Return Format: ")
+                .default("text".into())
+                .interact_text()
+                .unwrap()
+        };
         
-        // Prompt for warnings
-        let warnings = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("⚠️ Warnings: ")
-            .default("".into())
-            .interact_text()
-            .unwrap();
+        // Prompt for warnings with animation
+        let warnings = {
+            if !quiet {
+                utils::output::print_wave_animation(2, "Adding warnings...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("⚠️ Warnings: ")
+                .default("".into())
+                .interact_text()
+                .unwrap()
+        };
         
         (format, warnings)
     };
@@ -572,19 +817,24 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
     };
 
     if !quiet {
-        eprintln!(
-            "Goals: {}\nReturn Format: {}\nWarnings: {}",
-            final_goals, format, warnings
-        );
-        if let Some(ctx) = context {
-            eprintln!("Context from stdin: {} characters", ctx.len());
+        utils::output::println_colored("📋 Prompt Summary:", utils::output::Color::BrightCyan);
+        utils::output::println_colored(&format!("🏆 Goals: {}", final_goals), utils::output::Color::BrightYellow);
+        utils::output::println_colored(&format!("📝 Return Format: {}", format), utils::output::Color::BrightGreen);
+        if !warnings.is_empty() {
+            utils::output::println_colored(&format!("⚠️  Warnings: {}", warnings), utils::output::Color::Orange);
         }
+        if let Some(ctx) = context {
+            utils::output::println_colored(&format!("📄 Context from stdin: {} characters", ctx.len()), utils::output::Color::Purple);
+        }
+        println!(); // Add space before processing
     }
     
     match output {
         Ok(()) => {
             if !quiet {
-                eprintln!("Prompt executed successfully");
+                println!();
+                utils::output::print_success("Prompt executed successfully! ✨");
+                println!();
             }
             
             // Handle recursion if enabled and we haven't reached the limit
@@ -594,7 +844,10 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
                     let next_wave = wave_number + 1;
                     
                     if !quiet {
-                        eprintln!("Launching recursion wave {}...", next_wave);
+                        utils::output::print_wave_animation(next_wave as usize, &format!("Launching recursion wave {}...", next_wave));
+                        std::thread::sleep(std::time::Duration::from_millis(800));
+                        utils::output::clear_line();
+                        utils::output::println_colored(&format!("🌊 Launching recursion wave {}...", next_wave), utils::output::Color::DeepSkyBlue);
                     }
                     
                     // Build the command to execute the next wave
@@ -646,17 +899,18 @@ fn run_prompt(cli_goals: Option<String>, cli_format: &str, cli_warnings: &str, c
                         }
                     }
                 } else if !quiet {
-                    eprintln!("Reached maximum recursion depth ({} waves)", max_waves);
+                    utils::output::print_rainbow(&format!("🏁 Reached maximum recursion depth ({} waves) 🏁", max_waves));
                 }
             }
         },
-        Err(e) => eprintln!("Prompt returned error: {:?}", e),
+        Err(e) => utils::output::print_error(&format!("Prompt execution failed: {:?}", e)),
     }
 }
 
 fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe: bool, filter_thinking: bool) {
     if !quiet {
-        eprintln!("Running direct prompt without thinking steps...");
+        utils::output::print_banner("🧠 Direct Mode Activated 🧠", utils::output::Color::Purple);
+        utils::output::println_colored("Running direct prompt without thinking steps...", utils::output::Color::BrightMagenta);
     }
 
     // Read from stdin if pipe mode is enabled
@@ -676,11 +930,18 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
         // Use piped content as prompt if no explicit prompt was provided
         piped_content.clone()
     } else {
-        Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("Enter your prompt: ")
-            .default("".into())
-            .interact_text()
-            .unwrap()
+        {
+            if !quiet {
+                utils::output::print_wave_animation(0, "Awaiting your direct prompt...");
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                utils::output::clear_line();
+            }
+            Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("💭 Enter your prompt: ")
+                .default("".into())
+                .interact_text()
+                .unwrap()
+        }
     };
 
     // If we have piped content but also explicit prompt, use piped content as context
@@ -698,17 +959,20 @@ fn run_non_think(cli_prompt: Option<String>, clipboard: bool, quiet: bool, pipe:
 
     if !quiet {
         if let Some(ctx) = context {
-            eprintln!("Context from stdin: {} characters", ctx.len());
+            utils::output::println_colored(&format!("📄 Context from stdin: {} characters", ctx.len()), utils::output::Color::Purple);
         }
+        println!(); // Add space before processing
     }
     
     match output {
         Ok(()) => {
             if !quiet {
-                eprintln!("Non-think prompt executed successfully");
+                println!();
+                utils::output::print_success("Direct prompt executed successfully! ⚡");
+                println!();
             }
         },
-        Err(e) => eprintln!("Prompt returned error: {:?}", e),
+        Err(e) => utils::output::print_error(&format!("Prompt execution failed: {:?}", e)),
     }
 }
 
@@ -862,15 +1126,23 @@ fn list_models(provider: Option<String>, quiet: bool) {
         "OpenAI" => {
             if !quiet {
                 utils::output::print_banner("🧠 OpenAI Models 🧠", utils::output::Color::BrightGreen);
-                utils::output::println_colored("  1. gpt-4o", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  2. gpt-4-turbo", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  1. gpt-5", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  2. gpt-4o", utils::output::Color::BrightCyan);
                 utils::output::println_colored("  3. gpt-4", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  4. gpt-3.5-turbo", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  4. o3", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  5. o3-pro", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  6. o4", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  7. o4-mini", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  8. o4-mini-high", utils::output::Color::BrightCyan);
             } else {
+                println!("gpt-5");
                 println!("gpt-4o");
-                println!("gpt-4-turbo");
                 println!("gpt-4");
-                println!("gpt-3.5-turbo");
+                println!("o3");
+                println!("o3-pro");
+                println!("o4");
+                println!("o4-mini");
+                println!("o4-mini-high");
             }
         },
         "Gemini" => {
@@ -907,5 +1179,897 @@ fn list_models(provider: Option<String>, quiet: bool) {
             eprintln!("Unsupported provider: {}", provider_name);
             std::process::exit(1);
         }
+    }
+}
+
+/// Handle project management commands
+fn handle_project_command(command: &ProjectCommands) {
+    use project::ProjectManager;
+    use models::{Goal, Context};
+    
+    let project_manager = match ProjectManager::new() {
+        Ok(pm) => pm,
+        Err(e) => {
+            eprintln!("Failed to initialize project manager: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Helper function to resolve project name/ID with guided selection
+    let resolve_project_with_guidance = |project_name: Option<&String>, action_description: &str| -> anyhow::Result<String> {
+        match project_name {
+            Some(name) => {
+                // Find project by name
+                let projects = project_manager.list_projects()?;
+                if let Some(proj) = projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                    Ok(proj.id.clone())
+                } else {
+                    Err(anyhow::anyhow!("Project '{}' not found", name))
+                }
+            }
+            None => {
+                // Interactive project selection
+                let projects = project_manager.list_projects()?;
+                if projects.is_empty() {
+                    return Err(anyhow::anyhow!("No projects available. Create one first with 'ola project create --name <name>'"));
+                }
+                
+                let project_names: Vec<String> = projects.iter().map(|p| {
+                    let active_marker = if let Ok(Some(active_id)) = project_manager.get_active_project() {
+                        if active_id == p.id { " (active)" } else { "" }
+                    } else { "" };
+                    format!("{}{}", p.name, active_marker)
+                }).collect();
+                
+                let selected_idx = Select::with_theme(&ColorfulTheme::default())
+                    .with_prompt(&format!("Select project to {}", action_description))
+                    .items(&project_names)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| anyhow::anyhow!("Selection failed: {}", e))?;
+                
+                Ok(projects[selected_idx].id.clone())
+            }
+        }
+    };
+
+    match command {
+        ProjectCommands::List => {
+            let active_project_id = project_manager.get_active_project().unwrap_or(None);
+            
+            match project_manager.list_projects() {
+                Ok(projects) => {
+                    if projects.is_empty() {
+                        println!("No projects found. Create one with 'ola project create --name <name>'");
+                    } else {
+                        println!("Projects:");
+                        
+                        let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+                        
+                        for project in projects {
+                            let is_active = active_project_id.as_ref() == Some(&project.id);
+                            
+                            if is_active {
+                                let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true));
+                                print!("* ");
+                            } else {
+                                let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)));
+                                print!("  ");
+                            }
+                            
+                            println!("{} - {} ({} files, {} goals, {} contexts)", 
+                                   project.id, 
+                                   project.name, 
+                                   project.files.len(),
+                                   project.goals.len(),
+                                   project.contexts.len());
+                            
+                            let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)).set_dimmed(true));
+                            println!("    Updated: {}", project.updated_at.format("%Y-%m-%d %H:%M:%S"));
+                            let _ = stdout.reset();
+                        }
+                        
+                        if let Some(active_id) = active_project_id {
+                            let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_dimmed(true));
+                            println!("\nActive project: {}", active_id);
+                            let _ = stdout.reset();
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to list projects: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Create { name } => {
+            println!("🚀 Welcome to Ola Project Creation!");
+            
+            // Get project name - from CLI arg or prompt
+            let project_name = match name {
+                Some(n) => n.clone(),
+                None => {
+                    Input::with_theme(&ColorfulTheme::default())
+                        .with_prompt("Project name")
+                        .interact_text()
+                        .map_err(|e| {
+                            eprintln!("Input failed: {}", e);
+                            std::process::exit(1);
+                        })
+                        .unwrap()
+                }
+            };
+            
+            // Check if project with this name already exists
+            let existing_projects = match project_manager.list_projects() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Failed to check existing projects: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            if existing_projects.iter().any(|p| p.name.eq_ignore_ascii_case(&project_name)) {
+                eprintln!("A project named '{}' already exists. Please choose a different name.", project_name);
+                std::process::exit(1);
+            }
+            
+            match project_manager.create_project(project_name.clone()) {
+                Ok(project) => {
+                    println!("✅ Created project '{}' with ID: {}", project.name, project.id);
+                    println!("   Project directory: ~/.ola/data/projects/{}", project.id);
+                    
+                    // Set as active project if no active project is set or if user confirms
+                    let should_set_active = if project_manager.get_active_project().unwrap_or(None).is_none() {
+                        true
+                    } else {
+                        Confirm::with_theme(&ColorfulTheme::default())
+                            .with_prompt(&format!("Set '{}' as active project?", project.name))
+                            .default(true)
+                            .interact()
+                            .unwrap_or(false)
+                    };
+                    
+                    if should_set_active {
+                        if let Err(e) = project_manager.set_active_project(&project.id) {
+                            eprintln!("Warning: Failed to set as active project: {}", e);
+                        } else {
+                            println!("   Set as active project");
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to create project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::Delete { project, force } => {
+            let project_id = match resolve_project_with_guidance(project.as_ref(), "delete") {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Get project details for confirmation
+            let project_name = match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => proj.name,
+                Ok(None) => {
+                    eprintln!("Project not found");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            if !force {
+                let confirmation = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt(&format!("Are you sure you want to delete project '{}'? This cannot be undone.", project_name))
+                    .default(false)
+                    .interact()
+                    .unwrap();
+                
+                if !confirmation {
+                    println!("Deletion cancelled");
+                    return;
+                }
+            }
+            
+            match project_manager.delete_project(&project_id) {
+                Ok(_) => {
+                    println!("✅ Deleted project '{}'", project_name);
+                    
+                    // Clear active project if it was the deleted one
+                    if let Ok(Some(active)) = project_manager.get_active_project() {
+                        if active == project_id {
+                            let active_file = std::env::var("HOME")
+                                .map(|h| std::path::PathBuf::from(h).join(".ola").join("active_project"))
+                                .unwrap_or_default();
+                            let _ = std::fs::remove_file(&active_file);
+                            println!("   Cleared as active project");
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to delete project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Edit { project, name } => {
+            let project_id = match resolve_project_with_guidance(project.as_ref(), "edit") {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            // Get current project details
+            let current_project = match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => proj,
+                Ok(None) => {
+                    eprintln!("Project not found");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            let old_name = current_project.name.clone();
+            
+            // Get new name - from CLI arg or prompt
+            let new_name = match name {
+                Some(n) => n.clone(),
+                None => {
+                    Input::with_theme(&ColorfulTheme::default())
+                        .with_prompt("New project name")
+                        .default(old_name.clone())
+                        .interact_text()
+                        .map_err(|e| {
+                            eprintln!("Input failed: {}", e);
+                            std::process::exit(1);
+                        })
+                        .unwrap()
+                }
+            };
+            
+            if new_name != old_name {
+                match project_manager.edit_project(&project_id, Some(new_name.clone())) {
+                    Ok(_) => {
+                        println!("✅ Updated project name from '{}' to '{}'", old_name, new_name);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to edit project: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                println!("No changes made to project '{}'", old_name);
+            }
+        }
+        
+        ProjectCommands::Set { project } => {
+            let project_id = match resolve_project_with_guidance(project.as_ref(), "set as active") {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            let project_name = match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => proj.name,
+                Ok(None) => {
+                    eprintln!("Project not found");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            
+            match project_manager.set_active_project(&project_id) {
+                Ok(_) => {
+                    println!("✅ Set '{}' as active project", project_name);
+                }
+                Err(e) => {
+                    eprintln!("Failed to set active project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Upload { project, file } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match std::fs::read(file) {
+                Ok(content) => {
+                    let filename = std::path::Path::new(file)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    
+                    match project_manager.upload_file(&project_id, filename, &content) {
+                        Ok(file_obj) => {
+                            // Update project with new file
+                            if let Ok(Some(mut proj)) = project_manager.load_project(&project_id) {
+                                proj.add_file(file_obj.clone());
+                                if let Err(e) = project_manager.save_project(&proj) {
+                                    eprintln!("Warning: Failed to save project: {}", e);
+                                }
+                                println!("✅ Uploaded file '{}' to project '{}'", file_obj.filename, proj.name);
+                            } else {
+                                println!("✅ Uploaded file '{}' to project '{}'", file_obj.filename, project_id);
+                            }
+                            println!("   File ID: {}", file_obj.id);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to upload file: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to read file '{}': {}", file, e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::Files { project } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => {
+                    if proj.files.is_empty() {
+                        println!("No files in project '{}'", proj.name);
+                    } else {
+                        println!("Files in project '{}':", proj.name);
+                        for file in &proj.files {
+                            println!("  {} - {} ({} bytes, {})", 
+                                   file.id, 
+                                   file.filename,
+                                   file.size,
+                                   file.uploaded_at.format("%Y-%m-%d %H:%M:%S"));
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::AddGoal { project, goal } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            // Load or create project
+            let mut proj = match project_manager.load_project(&project_id) {
+                Ok(Some(p)) => p,
+                Ok(None) if project_id == "default" => {
+                    match project_manager.get_default_project() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to create default project: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            let order = proj.goals.len() as u32;
+            let goal_obj = Goal::new(goal.clone(), order);
+            proj.add_goal(goal_obj.clone());
+
+            match project_manager.save_project(&proj) {
+                Ok(_) => {
+                    println!("✅ Added goal to project '{}': {}", proj.name, goal);
+                    println!("   Goal ID: {}", goal_obj.id);
+                }
+                Err(e) => {
+                    eprintln!("Failed to save project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::RemoveGoal { project, goal_id } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(mut proj)) => {
+                    if proj.remove_goal(goal_id) {
+                        match project_manager.save_project(&proj) {
+                            Ok(_) => {
+                                println!("✅ Removed goal '{}' from project '{}'", goal_id, proj.name);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to save project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("Goal '{}' not found in project '{}'", goal_id, proj.name);
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::AddContext { project, context } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            // Load or create project
+            let mut proj = match project_manager.load_project(&project_id) {
+                Ok(Some(p)) => p,
+                Ok(None) if project_id == "default" => {
+                    match project_manager.get_default_project() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to create default project: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            let order = proj.contexts.len() as u32;
+            let context_obj = Context::new(context.clone(), order);
+            proj.add_context(context_obj.clone());
+
+            match project_manager.save_project(&proj) {
+                Ok(_) => {
+                    println!("✅ Added context to project '{}': {}", proj.name, context);
+                    println!("   Context ID: {}", context_obj.id);
+                }
+                Err(e) => {
+                    eprintln!("Failed to save project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::RemoveContext { project, context_id } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(mut proj)) => {
+                    if proj.remove_context(context_id) {
+                        match project_manager.save_project(&proj) {
+                            Ok(_) => {
+                                println!("✅ Removed context '{}' from project '{}'", context_id, proj.name);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to save project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("Context '{}' not found in project '{}'", context_id, proj.name);
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::RemoveFile { project, file_id } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(mut proj)) => {
+                    // Remove from project metadata
+                    if proj.remove_file(file_id) {
+                        // Also delete the actual file
+                        if let Err(e) = project_manager.delete_file(&project_id, file_id) {
+                            eprintln!("Warning: Failed to delete file from disk: {}", e);
+                        }
+                        
+                        match project_manager.save_project(&proj) {
+                            Ok(_) => {
+                                println!("✅ Removed file '{}' from project '{}'", file_id, proj.name);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to save project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("File '{}' not found in project '{}'", file_id, proj.name);
+                        std::process::exit(1);
+                    }
+                }
+                Ok(None) => {
+                    eprintln!("Project '{}' not found", project_id);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        
+        ProjectCommands::Show { project } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => proj.id.clone(),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project or default
+                    match project_manager.get_active_project() {
+                        Ok(Some(active_id)) => active_id,
+                        Ok(None) => "default".to_string(),
+                        Err(_) => "default".to_string(),
+                    }
+                }
+            };
+            
+            match project_manager.load_project(&project_id) {
+                Ok(Some(proj)) => {
+                    println!("Project Details:");
+                    println!("  Name: {}", proj.name);
+                    println!("  ID: {}", proj.id);
+                    println!("  Created: {}", proj.created_at.format("%Y-%m-%d %H:%M:%S"));
+                    println!("  Updated: {}", proj.updated_at.format("%Y-%m-%d %H:%M:%S"));
+                    
+                    println!("\nGoals ({}):", proj.goals.len());
+                    for goal in &proj.goals {
+                        println!("  {}. {} (ID: {})", goal.order + 1, goal.text, goal.id);
+                    }
+                    
+                    println!("\nContexts ({}):", proj.contexts.len());
+                    for context in &proj.contexts {
+                        println!("  {}. {} (ID: {})", context.order + 1, context.text, context.id);
+                    }
+                    
+                    println!("\nFiles ({}):", proj.files.len());
+                    for file in &proj.files {
+                        println!("  {} - {} ({} bytes)", file.filename, file.id, file.size);
+                    }
+                }
+                Ok(None) => {
+                    if project_id == "default" {
+                        println!("No default project exists. Creating one...");
+                        match project_manager.get_default_project() {
+                            Ok(proj) => {
+                                println!("✅ Created default project");
+                                println!("  Name: {}", proj.name);
+                                println!("  ID: {}", proj.id);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to create default project: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        eprintln!("Project '{}' not found", project_id);
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to load project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        ProjectCommands::Run { project, goals, format, warnings, clipboard, no_thinking } => {
+            let project_id = match project {
+                Some(name) => {
+                    // Find project by name
+                    let projects = match project_manager.list_projects() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Failed to list projects: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    match projects.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+                        Some(proj) => Some(proj.id.clone()),
+                        None => {
+                            eprintln!("Project '{}' not found", name);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // Use active project if available
+                    project_manager.get_active_project().unwrap_or(None)
+                }
+            };
+            
+            match prompt::structure_reasoning_with_project(
+                project_id.as_deref(),
+                goals,
+                format,
+                warnings,
+                *clipboard,
+                None,
+                *no_thinking,
+            ) {
+                Ok(_) => {
+                    // Success
+                }
+                Err(e) => {
+                    eprintln!("Failed to run prompt with project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
+/// Handle console command demonstrations
+fn handle_console_command(demo: bool, loading: Option<String>, duration: u64) {
+    if demo {
+        println!("🖥️  Console Features Demo");
+        println!("Running the basic console example...\n");
+        
+        if let Err(e) = console_utils::demo_console_features() {
+            eprintln!("Console demo failed: {}", e);
+            std::process::exit(1);
+        }
+        
+        println!("Demo completed!");
+    }
+    
+    if let Some(ref message) = loading {
+        if let Err(e) = console_utils::loading_animation(message, duration) {
+            eprintln!("Loading animation failed: {}", e);
+            std::process::exit(1);
+        }
+        println!("✅ Loading complete!");
+    }
+    
+    if !demo && loading.is_none() {
+        println!("Console utilities available. Use --demo or --loading <message> to see examples.");
+        println!("Examples:");
+        println!("  ola console --demo");
+        println!("  ola console --loading \"Processing data\" --duration 5000");
     }
 }

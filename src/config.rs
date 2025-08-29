@@ -96,11 +96,56 @@ impl Config {
         self.active_provider = provider_name;
     }
 
-    pub fn get_active_provider(&self) -> Option<&ProviderConfig> {
-        self.providers
+    pub fn get_active_provider(&self) -> Option<ProviderConfig> {
+        if let Some(provider) = self.providers
             .iter()
             .find(|p| p.provider == self.active_provider)
+        {
+            let mut config = provider.clone();
+            config.api_key = get_api_key_with_env_fallback(&config.provider, &config.api_key);
+            Some(config)
+        } else {
+            detect_provider_from_env()
+        }
     }
+}
+
+fn get_api_key_with_env_fallback(provider: &str, configured_key: &str) -> String {
+    if !configured_key.trim().is_empty() {
+        return configured_key.to_string();
+    }
+    
+    let env_var = match provider {
+        "OpenAI" => "OPENAI_API_KEY",
+        "Anthropic" => "ANTHROPIC_API_KEY", 
+        "Gemini" => "GEMINI_API_KEY",
+        _ => return configured_key.to_string(),
+    };
+    
+    std::env::var(env_var).unwrap_or_else(|_| configured_key.to_string())
+}
+
+pub fn detect_provider_from_env() -> Option<ProviderConfig> {
+    let providers = [
+        ("OpenAI", "OPENAI_API_KEY", "gpt-5"),
+        ("Anthropic", "ANTHROPIC_API_KEY", "claude-3-sonnet-20240229"),
+        ("Gemini", "GEMINI_API_KEY", "gemini-1.5-pro"),
+    ];
+    
+    for (provider_name, env_var, default_model) in providers {
+        if let Ok(api_key) = std::env::var(env_var) {
+            if !api_key.trim().is_empty() {
+                return Some(ProviderConfig {
+                    provider: provider_name.to_string(),
+                    api_key,
+                    model: Some(default_model.to_string()),
+                    additional_settings: None,
+                });
+            }
+        }
+    }
+    
+    None
 }
 
 fn get_config_path() -> Result<PathBuf, io::Error> {
@@ -149,7 +194,7 @@ fn _run_interactive_config() -> Result<(), io::Error> {
     // Model selection based on provider
     let model = match provider.as_str() {
         "OpenAI" => {
-            let models = vec!["gpt-4", "gpt-3.5-turbo"];
+            let models = vec!["gpt-5", "gpt-4", "gpt-3.5-turbo"];
             let idx = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Select model")
                 .items(&models)

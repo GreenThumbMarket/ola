@@ -1,15 +1,15 @@
 // Output formatting utilities
-use std::io::{self, Write};
+use std::io;
+use std::io::Write;
 
 /// Enum for defining ANSI color codes
 pub enum Color {
     Red,
     Green,
-    Yellow,
     Blue,
     Cyan,
     Magenta,
-    Gray,
+    Yellow,
     Reset,
     // Bright colors
     BrightRed,
@@ -35,11 +35,10 @@ impl Color {
         match self {
             Color::Red => "\x1b[31m",
             Color::Green => "\x1b[32m",
-            Color::Yellow => "\x1b[33m",
             Color::Blue => "\x1b[34m",
             Color::Cyan => "\x1b[36m",
             Color::Magenta => "\x1b[35m",
-            Color::Gray => "\x1b[90m",
+            Color::Yellow => "\x1b[33m",
             Color::Reset => "\x1b[0m",
             // Bright colors
             Color::BrightRed => "\x1b[91m",
@@ -62,35 +61,6 @@ impl Color {
     }
 }
 
-/// Print text in a specified color
-pub fn print_colored(text: &str, color: Color) {
-    print!("{}{}{}", color.code(), text, Color::Reset.code());
-    io::stdout().flush().unwrap();
-}
-
-/// Print text in a specified color with a newline
-pub fn println_colored(text: &str, color: Color) {
-    println!("{}{}{}", color.code(), text, Color::Reset.code());
-}
-
-/// Print a thinking animation frame
-pub fn print_thinking_animation(emoji: &str, text: &str) {
-    eprint!("\r\x1B[K{}  {}", emoji, text);
-    io::stderr().flush().unwrap();
-}
-
-/// Clear the current line
-pub fn clear_line() {
-    eprint!("\r\x1B[K");
-    io::stderr().flush().unwrap();
-}
-
-/// Print a divider line
-pub fn print_divider(quiet: bool) {
-    if !quiet {
-        eprintln!("─────────────────────────────────────────────────────");
-    }
-}
 
 /// Print an error message in red
 pub fn print_error(message: &str) {
@@ -100,6 +70,16 @@ pub fn print_error(message: &str) {
 /// Print a success message in green
 pub fn print_success(message: &str) {
     eprintln!("{}✓ {}{}", Color::Green.code(), message, Color::Reset.code());
+}
+
+/// Print colored text to stdout
+pub fn print_colored(text: &str, color: Color) {
+    print!("{}{}{}", color.code(), text, Color::Reset.code());
+}
+
+/// Print colored text with newline to stdout
+pub fn println_colored(text: &str, color: Color) {
+    println!("{}{}{}", color.code(), text, Color::Reset.code());
 }
 
 /// Print a rainbow gradient text
@@ -154,6 +134,12 @@ pub fn print_banner(text: &str, color: Color) {
     println!("{}╚{}╝{}", color.code(), border, Color::Reset.code());
 }
 
+/// Clear the current line
+pub fn clear_line() {
+    eprint!("\r\x1B[K");
+    io::stderr().flush().unwrap();
+}
+
 /// Print an animated spinner
 pub fn print_spinner_frame(frame: usize, message: &str) {
     let spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -200,13 +186,13 @@ pub fn display_ola_logo() {
     
     // Print the braille art in ocean colors
     for line in lines.iter().skip(8).take(15) {
-        println_colored(line, Color::DeepSkyBlue);
+        println!("{}{}{}", Color::DeepSkyBlue.code(), line, Color::Reset.code());
     }
     
     // Print the wave lines in animated style
     for line in lines.iter().skip(23) {
         if line.contains("~") {
-            println_colored(line, Color::Turquoise);
+            println!("{}{}{}", Color::Turquoise.code(), line, Color::Reset.code());
         } else {
             println!("{}", line);
         }

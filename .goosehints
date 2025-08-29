@@ -1,12 +1,23 @@
 # Background
 Goose, you're in a rust app called ola. 
 
-# Directions
-Understand the contents of the README.md before you get started. 
-You can find features in `/featSpecs/*` with a markdown file corresponding to the branch you're on. Read the feature request file before getting going.
+The goal of this app is to help users get better responses out of reasoning models like o3, gemini-pro, claude opus, and others. Anything that involves reasoning, not
+just simple Q&A.
 
-# Warnings
-If you don't have a spec, make the user give you one
+## UX
+The user types `ola <command> <args>` in the terminal, and the app responds with a message. Use `ola -h` to see the help message and all available commands.
+
+## Commands
+
+- `ola help`: Displays the help message with all available commands.
+- `ola config`: Starts the configuration flow for user.
+- `ola prompt`: Starts the prompt flow for user. This is the main command and allows users to interact with reasoning models. Operates under the "goals, format, and warnings" paradigm. This helps the user structure their requests effectively for the reasoning model. Goal is to engineer the context to allow the model to provide the best responsenaturally through the TUI.
+
+## Architecture
+The app is written in Rust and uses a variety of libraries to make a TUI, handle commands, and manage configuration. Check the `Cargo.toml` file for dependencies.
+
+
+
 
 
 

@@ -92,8 +92,4 @@ impl Provider for OpenAI {
         
         Ok(full_response)
     }
-    
-    fn get_provider_name(&self) -> &str {
-        "OpenAI"
-    }
 }
