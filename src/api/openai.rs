@@ -51,7 +51,9 @@ impl Provider for OpenAI {
         
         // Check if response is successful
         if !response.status().is_success() {
-            return Err(format!("OpenAI API error: {}", response.status()).into());
+            let status = response.status();
+            let error_body = response.text().unwrap_or_else(|_| "Unable to read error response".to_string());
+            return Err(format!("OpenAI API error {}: {}", status, error_body).into());
         }
         
         let mut full_response = String::new();
