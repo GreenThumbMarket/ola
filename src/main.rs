@@ -497,7 +497,7 @@ fn main() {
             } else {
                 match provider_name.as_str() {
                     "OpenAI" => {
-                        let models = vec!["gpt-4o", "gpt-4", "o3", "o3-pro", "o4", "o4-mini", "o4-mini-high"];
+                        let models = vec!["gpt-5", "gpt-4o", "gpt-4", "o3", "o3-pro", "o4", "o4-mini", "o4-mini-high"];
                         let idx = Select::with_theme(&ColorfulTheme::default())
                             .with_prompt("Model")
                             .items(&models)
@@ -1126,14 +1126,16 @@ fn list_models(provider: Option<String>, quiet: bool) {
         "OpenAI" => {
             if !quiet {
                 utils::output::print_banner("🧠 OpenAI Models 🧠", utils::output::Color::BrightGreen);
-                utils::output::println_colored("  1. gpt-4o", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  2. gpt-4", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  3. o3", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  4. o3-pro", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  5. o4", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  6. o4-mini", utils::output::Color::BrightCyan);
-                utils::output::println_colored("  7. o4-mini-high", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  1. gpt-5", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  2. gpt-4o", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  3. gpt-4", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  4. o3", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  5. o3-pro", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  6. o4", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  7. o4-mini", utils::output::Color::BrightCyan);
+                utils::output::println_colored("  8. o4-mini-high", utils::output::Color::BrightCyan);
             } else {
+                println!("gpt-5");
                 println!("gpt-4o");
                 println!("gpt-4");
                 println!("o3");

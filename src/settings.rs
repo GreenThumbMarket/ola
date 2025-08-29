@@ -89,7 +89,7 @@ pub struct ThinkingAnimation {
 
 // Default implementations
 fn default_model() -> String {
-    "deepseek-r1:14b".to_string()
+    "gpt-5".to_string()
 }
 
 fn default_goals_prefix() -> String {

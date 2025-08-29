@@ -127,7 +127,7 @@ fn get_api_key_with_env_fallback(provider: &str, configured_key: &str) -> String
 
 pub fn detect_provider_from_env() -> Option<ProviderConfig> {
     let providers = [
-        ("OpenAI", "OPENAI_API_KEY", "gpt-4"),
+        ("OpenAI", "OPENAI_API_KEY", "gpt-5"),
         ("Anthropic", "ANTHROPIC_API_KEY", "claude-3-sonnet-20240229"),
         ("Gemini", "GEMINI_API_KEY", "gemini-1.5-pro"),
     ];
@@ -194,7 +194,7 @@ fn _run_interactive_config() -> Result<(), io::Error> {
     // Model selection based on provider
     let model = match provider.as_str() {
         "OpenAI" => {
-            let models = vec!["gpt-4", "gpt-3.5-turbo"];
+            let models = vec!["gpt-5", "gpt-4", "gpt-3.5-turbo"];
             let idx = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Select model")
                 .items(&models)
