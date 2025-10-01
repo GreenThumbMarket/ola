@@ -169,7 +169,7 @@ fn stream_response(
 fn append_hints_if_available(input_data: &mut String) -> Result<(), Box<dyn std::error::Error>> {
     // Try to read hints from a local .olaHints file; if not found, fallback to global hints
     let mut hints = String::new();
-    
+
     // Check local file .olaHints in the current directory
     if Path::new("./.olaHints").exists() {
         hints = fs::read_to_string("./.olaHints")?;
@@ -187,7 +187,34 @@ fn append_hints_if_available(input_data: &mut String) -> Result<(), Box<dyn std:
     if !hints.is_empty() {
         input_data.push_str(&format!("\nHINTS: {}", hints));
     }
-    
+
+    // Discover and append additional context files from the current directory
+    append_context_files(input_data)?;
+
+    Ok(())
+}
+
+// Helper function to discover and append context files from the current directory
+fn append_context_files(input_data: &mut String) -> Result<(), Box<dyn std::error::Error>> {
+    // Load context configuration
+    let context_config = crate::context::ContextConfig::load()?;
+
+    // If no context files are configured, return early
+    if context_config.files.is_empty() {
+        return Ok(());
+    }
+
+    // Read all configured context files
+    let files_with_content = context_config.read_all_files()?;
+
+    // Append found files to input data
+    if !files_with_content.is_empty() {
+        input_data.push_str("\n\n--- ADDITIONAL CONTEXT FILES ---\n");
+        for (filename, content) in files_with_content {
+            input_data.push_str(&format!("\n=== File: {} ===\n{}\n", filename, content));
+        }
+    }
+
     Ok(())
 }
 

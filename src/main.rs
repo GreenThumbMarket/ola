@@ -19,6 +19,7 @@ mod prompt;
 mod settings;
 mod models;
 mod project;
+mod context;
 
 // API communication layer
 mod api;
@@ -199,6 +200,37 @@ enum Commands {
         #[arg(long, default_value = "3000")]
         duration: u64,
     },
+    /// Manage context files for prompts
+    Context {
+        #[command(subcommand)]
+        command: ContextCommands,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ContextCommands {
+    /// Add a file to the context list
+    Add {
+        /// File path to add to context
+        #[arg(value_name = "FILE")]
+        file: String,
+    },
+    /// Remove a file from the context list
+    #[command(alias = "rm")]
+    Remove {
+        /// File path to remove from context
+        #[arg(value_name = "FILE")]
+        file: String,
+    },
+    /// List all context files
+    #[command(alias = "ls")]
+    List,
+    /// Clear all context files
+    Clear {
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -371,6 +403,9 @@ fn main() {
         }
         Some(Commands::Console { demo, loading, duration }) => {
             handle_console_command(*demo, loading.clone(), *duration);
+        }
+        Some(Commands::Context { command }) => {
+            handle_context_command(command);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -2049,15 +2084,15 @@ fn handle_console_command(demo: bool, loading: Option<String>, duration: u64) {
     if demo {
         println!("🖥️  Console Features Demo");
         println!("Running the basic console example...\n");
-        
+
         if let Err(e) = console_utils::demo_console_features() {
             eprintln!("Console demo failed: {}", e);
             std::process::exit(1);
         }
-        
+
         println!("Demo completed!");
     }
-    
+
     if let Some(ref message) = loading {
         if let Err(e) = console_utils::loading_animation(message, duration) {
             eprintln!("Loading animation failed: {}", e);
@@ -2065,11 +2100,76 @@ fn handle_console_command(demo: bool, loading: Option<String>, duration: u64) {
         }
         println!("✅ Loading complete!");
     }
-    
+
     if !demo && loading.is_none() {
         println!("Console utilities available. Use --demo or --loading <message> to see examples.");
         println!("Examples:");
         println!("  ola console --demo");
         println!("  ola console --loading \"Processing data\" --duration 5000");
+    }
+}
+
+/// Handle context management commands
+fn handle_context_command(command: &ContextCommands) {
+    match command {
+        ContextCommands::Add { file } => {
+            match context::add_file(file) {
+                Ok(_) => {},
+                Err(e) => {
+                    utils::output::print_error(&format!("{}", e));
+                    std::process::exit(1);
+                }
+            }
+        }
+        ContextCommands::Remove { file } => {
+            match context::remove_file(file) {
+                Ok(_) => {},
+                Err(e) => {
+                    utils::output::print_error(&format!("{}", e));
+                    std::process::exit(1);
+                }
+            }
+        }
+        ContextCommands::List => {
+            if let Err(e) = context::list_files() {
+                utils::output::print_error(&format!("{}", e));
+                std::process::exit(1);
+            }
+        }
+        ContextCommands::Clear { force } => {
+            if !force {
+                let config = match context::ContextConfig::load() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        utils::output::print_error(&format!("Failed to load context: {}", e));
+                        std::process::exit(1);
+                    }
+                };
+
+                if config.files.is_empty() {
+                    utils::output::println_colored("No context files to clear.", utils::output::Color::BrightYellow);
+                    return;
+                }
+
+                let confirmation = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt(format!("Clear {} context file(s)?", config.files.len()))
+                    .default(false)
+                    .interact()
+                    .unwrap_or(false);
+
+                if !confirmation {
+                    utils::output::println_colored("Cancelled.", utils::output::Color::BrightYellow);
+                    return;
+                }
+            }
+
+            match context::clear_files() {
+                Ok(_) => {},
+                Err(e) => {
+                    utils::output::print_error(&format!("{}", e));
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }

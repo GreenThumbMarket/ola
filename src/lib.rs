@@ -7,6 +7,7 @@ pub mod prompt;
 pub mod settings;
 pub mod models;
 pub mod project;
+pub mod context;
 
 // API communication layer
 pub mod api;
