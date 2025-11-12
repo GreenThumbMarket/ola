@@ -27,6 +27,9 @@ mod api;
 mod utils;
 mod console_utils;
 
+// TUI module
+mod tui;
+
 #[derive(Parser)]
 #[command(name = "ola")]
 #[command(version = "0.2.0")]
@@ -66,6 +69,9 @@ struct OlaCli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
+    /// Launch the interactive TUI (Terminal User Interface)
+    Tui,
+
     /// Starts the application with optional arguments
     Start {
         /// Optional parameter for demonstration
@@ -344,6 +350,13 @@ fn main() {
                 cli.recursion,
                 cli.iterations,
             );
+        }
+        Some(Commands::Tui) => {
+            // Launch the TUI
+            if let Err(e) = tui::run() {
+                eprintln!("TUI error: {}", e);
+                std::process::exit(1);
+            }
         }
         Some(Commands::Start { verbose }) => {
             utils::output::startup_animation();
