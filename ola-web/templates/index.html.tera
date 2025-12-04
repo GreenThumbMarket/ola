@@ -1,0 +1,136 @@
+{% extends "base" %}
+
+{% block content %}
+<div class="card">
+    <h2 style="margin-bottom: 20px;">Structured Prompt Interface</h2>
+
+    <div id="alert" style="display: none;"></div>
+
+    <form id="promptForm">
+        <div style="margin-bottom: 20px;">
+            <label for="goal">Goals</label>
+            <textarea
+                id="goal"
+                name="goal"
+                rows="4"
+                placeholder="What do you want to achieve? (e.g., Generate a Python function that sorts a list)"
+                required
+            ></textarea>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label for="format">Return Format</label>
+            <textarea
+                id="format"
+                name="format"
+                rows="3"
+                placeholder="How should the response be formatted? (e.g., Code with comments, JSON, Markdown)"
+                required
+            ></textarea>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label for="warnings">Warnings</label>
+            <textarea
+                id="warnings"
+                name="warnings"
+                rows="3"
+                placeholder="Any specific things to avoid or consider? (e.g., Don't use external libraries, Ensure type safety)"
+                required
+            ></textarea>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label for="context">Context (Optional)</label>
+            <textarea
+                id="context"
+                name="context"
+                rows="4"
+                placeholder="Any additional context or information..."
+            ></textarea>
+        </div>
+
+        <button type="submit" id="submitBtn">Submit Prompt</button>
+    </form>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p style="margin-top: 10px;">Processing your prompt...</p>
+    </div>
+
+    <div id="response" style="display: none; margin-top: 30px;">
+        <h3 style="margin-bottom: 15px;">Response</h3>
+        <div style="
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            max-height: 500px;
+            overflow-y: auto;
+        " id="responseContent"></div>
+    </div>
+</div>
+{% endblock content %}
+
+{% block extra_scripts %}
+<script>
+    const form = document.getElementById('promptForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const loading = document.getElementById('loading');
+    const responseDiv = document.getElementById('response');
+    const responseContent = document.getElementById('responseContent');
+    const alert = document.getElementById('alert');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        // Hide previous results
+        responseDiv.style.display = 'none';
+        alert.style.display = 'none';
+
+        // Show loading
+        loading.style.display = 'block';
+        submitBtn.disabled = true;
+
+        const formData = {
+            goal: document.getElementById('goal').value,
+            format: document.getElementById('format').value,
+            warnings: document.getElementById('warnings').value,
+            context: document.getElementById('context').value || null,
+        };
+
+        try {
+            const response = await fetch('/api/prompt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
+            });
+
+            const data = await response.json();
+
+            loading.style.display = 'none';
+            submitBtn.disabled = false;
+
+            if (data.success) {
+                responseDiv.style.display = 'block';
+                responseContent.textContent = data.response;
+            } else {
+                showAlert(data.error || 'An error occurred', 'error');
+            }
+        } catch (error) {
+            loading.style.display = 'none';
+            submitBtn.disabled = false;
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    });
+
+    function showAlert(message, type) {
+        alert.className = `alert alert-${type}`;
+        alert.textContent = message;
+        alert.style.display = 'block';
+    }
+</script>
+{% endblock extra_scripts %}

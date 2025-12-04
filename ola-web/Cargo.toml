@@ -1,0 +1,26 @@
+[package]
+name = "ola-web"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Shared core library
+ola-core = { path = "../ola-core" }
+
+# Rocket web framework
+rocket = { version = "0.5.1", features = ["json"] }
+rocket_dyn_templates = { version = "0.2.0", features = ["tera"] }
+
+# Serde for JSON serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Tokio for async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Anyhow for error handling
+anyhow = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.9"
