@@ -24,3 +24,6 @@ anyhow = "1.0"
 # Logging
 log = "0.4"
 env_logger = "0.9"
+
+# Environment variables
+dotenvy = "0.15"

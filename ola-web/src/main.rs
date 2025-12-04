@@ -8,10 +8,25 @@ use rocket_dyn_templates::{Template, context};
 use ola_core::{Config, api, config::ProviderConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use std::env;
 
 // Shared application state
 struct AppState {
     config: Arc<Mutex<Option<Config>>>,
+}
+
+// Helper function to get API key from environment variables
+fn get_api_key_from_env(provider: &str) -> Result<String, String> {
+    let env_var = match provider.to_lowercase().as_str() {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
+        "ollama" => return Ok(String::new()), // Ollama doesn't need an API key
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+
+    env::var(env_var)
+        .map_err(|_| format!("Environment variable {} not found. Please set it in your .env file.", env_var))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -35,7 +50,6 @@ struct PromptResponse {
 #[serde(crate = "rocket::serde")]
 struct ConfigRequest {
     provider: String,
-    api_key: String,
     model: String,
 }
 
@@ -65,9 +79,20 @@ async fn api_configure(
     config_req: Json<ConfigRequest>,
     state: &State<AppState>,
 ) -> Json<ConfigResponse> {
+    // Get API key from environment variables
+    let api_key = match get_api_key_from_env(&config_req.provider) {
+        Ok(key) => key,
+        Err(e) => {
+            return Json(ConfigResponse {
+                success: false,
+                message: e,
+            });
+        }
+    };
+
     let provider_config = ProviderConfig {
         provider: config_req.provider.clone(),
-        api_key: config_req.api_key.clone(),
+        api_key,
         model: Some(config_req.model.clone()),
         additional_settings: None,
     };
@@ -189,20 +214,34 @@ async fn api_models(_state: &State<AppState>) -> Json<Vec<String>> {
     let models = match config.and_then(|c| c.get_active_provider()) {
         Some(provider_config) => match provider_config.provider.as_str() {
             "OpenAI" => vec![
+                "gpt-5.1".to_string(),
                 "gpt-5".to_string(),
-                "gpt-4o".to_string(),
-                "gpt-4".to_string(),
+                "gpt-5-mini".to_string(),
+                "gpt-5-nano".to_string(),
+                "gpt-5-codex".to_string(),
+                "gpt-4.1".to_string(),
+                "gpt-4.1-mini".to_string(),
+                "gpt-4.1-nano".to_string(),
                 "o3".to_string(),
                 "o3-pro".to_string(),
-                "o4".to_string(),
                 "o4-mini".to_string(),
             ],
             "Anthropic" => vec![
+                "claude-opus-4-5-20251124".to_string(),
+                "claude-haiku-4-5-20251015".to_string(),
+                "claude-opus-4-1-20250805".to_string(),
+                "claude-sonnet-4-20250522".to_string(),
                 "claude-3-opus-20240229".to_string(),
                 "claude-3-sonnet-20240229".to_string(),
                 "claude-3-haiku-20240307".to_string(),
             ],
             "Gemini" => vec![
+                "gemini-3-pro".to_string(),
+                "gemini-2.5-pro".to_string(),
+                "gemini-2.5-flash".to_string(),
+                "gemini-2.5-flash-lite".to_string(),
+                "gemini-2.5-flash-image".to_string(),
+                "gemini-2.0-flash".to_string(),
                 "gemini-1.5-pro".to_string(),
                 "gemini-1.5-flash".to_string(),
             ],
@@ -211,6 +250,8 @@ async fn api_models(_state: &State<AppState>) -> Json<Vec<String>> {
                 ola_core::config::fetch_ollama_models().unwrap_or_else(|_| vec![
                     "llama2".to_string(),
                     "mistral".to_string(),
+                    "codellama".to_string(),
+                    "phi".to_string(),
                 ])
             },
             _ => vec![],
@@ -222,6 +263,9 @@ async fn api_models(_state: &State<AppState>) -> Json<Vec<String>> {
 
 #[launch]
 fn rocket() -> _ {
+    // Load .env file
+    dotenvy::dotenv().ok();
+
     // Initialize logging
     env_logger::init();
 

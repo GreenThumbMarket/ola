@@ -16,16 +16,9 @@
                 <option value="gemini">Google Gemini</option>
                 <option value="ollama">Ollama (Local)</option>
             </select>
-        </div>
-
-        <div id="apiKeyField" style="margin-bottom: 20px; display: none;">
-            <label for="api_key">API Key</label>
-            <input
-                type="password"
-                id="api_key"
-                name="api_key"
-                placeholder="Enter your API key"
-            />
+            <small style="color: #666; display: block; margin-top: 5px;">
+                API keys are configured via environment variables on the server (.env file)
+            </small>
         </div>
 
         <div id="modelField" style="margin-bottom: 20px; display: none;">
@@ -43,8 +36,6 @@
 {% block extra_scripts %}
 <script>
     const providerSelect = document.getElementById('provider');
-    const apiKeyField = document.getElementById('apiKeyField');
-    const apiKeyInput = document.getElementById('api_key');
     const modelField = document.getElementById('modelField');
     const modelSelect = document.getElementById('model');
     const form = document.getElementById('configForm');
@@ -53,26 +44,36 @@
 
     const models = {
         openai: [
+            'gpt-5.1',
             'gpt-5',
-            'gpt-4o',
-            'gpt-4',
+            'gpt-5-mini',
+            'gpt-5-nano',
+            'gpt-5-codex',
+            'gpt-4.1',
+            'gpt-4.1-mini',
+            'gpt-4.1-nano',
             'o3',
             'o3-pro',
-            'o4',
-            'o4-mini',
-            'o4-mini-high'
+            'o4-mini'
         ],
         anthropic: [
+            'claude-opus-4-5-20251124',
+            'claude-haiku-4-5-20251015',
+            'claude-opus-4-1-20250805',
+            'claude-sonnet-4-20250522',
             'claude-3-opus-20240229',
             'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307',
-            'claude-2.1',
-            'claude-2.0'
+            'claude-3-haiku-20240307'
         ],
         gemini: [
+            'gemini-3-pro',
+            'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-flash-image',
+            'gemini-2.0-flash',
             'gemini-1.5-pro',
-            'gemini-1.5-flash',
-            'gemini-pro'
+            'gemini-1.5-flash'
         ],
         ollama: [
             'llama2',
@@ -86,15 +87,6 @@
         const provider = e.target.value;
 
         if (provider) {
-            // Show/hide API key field (not needed for Ollama)
-            if (provider === 'ollama') {
-                apiKeyField.style.display = 'none';
-                apiKeyInput.required = false;
-            } else {
-                apiKeyField.style.display = 'block';
-                apiKeyInput.required = true;
-            }
-
             // Populate model dropdown
             modelField.style.display = 'block';
             modelSelect.innerHTML = '<option value="">Select a model...</option>';
@@ -105,7 +97,6 @@
                 modelSelect.appendChild(option);
             });
         } else {
-            apiKeyField.style.display = 'none';
             modelField.style.display = 'none';
         }
     });
@@ -117,7 +108,6 @@
 
         const formData = {
             provider: providerSelect.value,
-            api_key: apiKeyInput.value || '',
             model: modelSelect.value,
         };
 
