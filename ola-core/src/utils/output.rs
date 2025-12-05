@@ -61,15 +61,24 @@ impl Color {
     }
 }
 
-
 /// Print an error message in red
 pub fn print_error(message: &str) {
-    eprintln!("{}Error: {}{}", Color::Red.code(), message, Color::Reset.code());
+    eprintln!(
+        "{}Error: {}{}",
+        Color::Red.code(),
+        message,
+        Color::Reset.code()
+    );
 }
 
 /// Print a success message in green
 pub fn print_success(message: &str) {
-    eprintln!("{}✓ {}{}", Color::Green.code(), message, Color::Reset.code());
+    eprintln!(
+        "{}✓ {}{}",
+        Color::Green.code(),
+        message,
+        Color::Reset.code()
+    );
 }
 
 /// Print colored text to stdout
@@ -93,7 +102,7 @@ pub fn print_rainbow(text: &str) {
         Color::BrightBlue,
         Color::BrightMagenta,
     ];
-    
+
     for (i, ch) in text.chars().enumerate() {
         let color = &colors[i % colors.len()];
         print!("{}{}", color.code(), ch);
@@ -113,7 +122,7 @@ pub fn print_pulsing(text: &str, color: Color) {
         Color::Yellow => Color::BrightYellow.code(),
         _ => color.code(),
     };
-    
+
     for (i, ch) in text.chars().enumerate() {
         if i % 2 == 0 {
             print!("{}{}", color.code(), ch);
@@ -128,7 +137,7 @@ pub fn print_pulsing(text: &str, color: Color) {
 pub fn print_banner(text: &str, color: Color) {
     let width = text.len() + 4;
     let border = "═".repeat(width);
-    
+
     println!("{}╔{}╗{}", color.code(), border, Color::Reset.code());
     println!("{}║  {}  ║{}", color.code(), text, Color::Reset.code());
     println!("{}╚{}╝{}", color.code(), border, Color::Reset.code());
@@ -144,7 +153,13 @@ pub fn clear_line() {
 pub fn print_spinner_frame(frame: usize, message: &str) {
     let spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let spinner = spinners[frame % spinners.len()];
-    eprint!("\r\x1B[K{}{} {} {}", Color::BrightCyan.code(), spinner, message, Color::Reset.code());
+    eprint!(
+        "\r\x1B[K{}{} {} {}",
+        Color::BrightCyan.code(),
+        spinner,
+        message,
+        Color::Reset.code()
+    );
     io::stderr().flush().unwrap();
 }
 
@@ -152,7 +167,13 @@ pub fn print_spinner_frame(frame: usize, message: &str) {
 pub fn print_wave_animation(frame: usize, text: &str) {
     let waves = ["🌊", "🌊🌊", "🌊🌊🌊", "🌊🌊", "🌊"];
     let wave = waves[frame % waves.len()];
-    eprint!("\r\x1B[K{}{} {}{}", Color::DeepSkyBlue.code(), wave, text, Color::Reset.code());
+    eprint!(
+        "\r\x1B[K{}{} {}{}",
+        Color::DeepSkyBlue.code(),
+        wave,
+        text,
+        Color::Reset.code()
+    );
     io::stderr().flush().unwrap();
 }
 
@@ -160,13 +181,15 @@ pub fn print_wave_animation(frame: usize, text: &str) {
 pub fn print_progress_bar(current: usize, total: usize, width: usize) {
     let progress = (current * width) / total;
     let bar: String = "█".repeat(progress) + &"░".repeat(width - progress);
-    
+
     let percentage = (current * 100) / total;
-    print!("\r{}{} {}%{}", 
-           Color::BrightGreen.code(), 
-           bar, 
-           percentage, 
-           Color::Reset.code());
+    print!(
+        "\r{}{} {}%{}",
+        Color::BrightGreen.code(),
+        bar,
+        percentage,
+        Color::Reset.code()
+    );
     io::stdout().flush().unwrap();
 }
 
@@ -174,7 +197,7 @@ pub fn print_progress_bar(current: usize, total: usize, width: usize) {
 pub fn display_ola_logo() {
     let ascii_art = include_str!("../ascii.txt");
     let lines: Vec<&str> = ascii_art.lines().collect();
-    
+
     // Print the main OLA text in rainbow
     for (i, line) in lines.iter().take(8).enumerate() {
         if i == 0 || line.trim().is_empty() {
@@ -183,12 +206,17 @@ pub fn display_ola_logo() {
             print_rainbow(line);
         }
     }
-    
+
     // Print the braille art in ocean colors
     for line in lines.iter().skip(8).take(15) {
-        println!("{}{}{}", Color::DeepSkyBlue.code(), line, Color::Reset.code());
+        println!(
+            "{}{}{}",
+            Color::DeepSkyBlue.code(),
+            line,
+            Color::Reset.code()
+        );
     }
-    
+
     // Print the wave lines in animated style
     for line in lines.iter().skip(23) {
         if line.contains("~") {

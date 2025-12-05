@@ -31,13 +31,14 @@ impl Config {
         }
 
         let config_str = fs::read_to_string(&config_path)?;
-        
+
         // Depending on file extension, use either JSON or YAML
         let config = if config_path.extension().and_then(|e| e.to_str()) == Some("json") {
             serde_json::from_str(&config_str)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-        } else if config_path.extension().and_then(|e| e.to_str()) == Some("yaml") || 
-                  config_path.extension().and_then(|e| e.to_str()) == Some("yml") {
+        } else if config_path.extension().and_then(|e| e.to_str()) == Some("yaml")
+            || config_path.extension().and_then(|e| e.to_str()) == Some("yml")
+        {
             serde_yaml::from_str(&config_str)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
         } else {
@@ -45,7 +46,7 @@ impl Config {
             serde_json::from_str(&config_str)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
         };
-        
+
         Ok(config)
     }
 
@@ -58,8 +59,9 @@ impl Config {
         let config_str = if config_path.extension().and_then(|e| e.to_str()) == Some("json") {
             serde_json::to_string_pretty(self)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-        } else if config_path.extension().and_then(|e| e.to_str()) == Some("yaml") || 
-                  config_path.extension().and_then(|e| e.to_str()) == Some("yml") {
+        } else if config_path.extension().and_then(|e| e.to_str()) == Some("yaml")
+            || config_path.extension().and_then(|e| e.to_str()) == Some("yml")
+        {
             serde_yaml::to_string(self)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
         } else {
@@ -67,7 +69,7 @@ impl Config {
             serde_json::to_string_pretty(self)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
         };
-        
+
         fs::write(&config_path, config_str)?;
 
         // Set restrictive permissions on config file (600)
@@ -97,7 +99,8 @@ impl Config {
     }
 
     pub fn get_active_provider(&self) -> Option<ProviderConfig> {
-        if let Some(provider) = self.providers
+        if let Some(provider) = self
+            .providers
             .iter()
             .find(|p| p.provider == self.active_provider)
         {
@@ -114,14 +117,14 @@ fn get_api_key_with_env_fallback(provider: &str, configured_key: &str) -> String
     if !configured_key.trim().is_empty() {
         return configured_key.to_string();
     }
-    
+
     let env_var = match provider {
         "OpenAI" => "OPENAI_API_KEY",
-        "Anthropic" => "ANTHROPIC_API_KEY", 
+        "Anthropic" => "ANTHROPIC_API_KEY",
         "Gemini" => "GEMINI_API_KEY",
         _ => return configured_key.to_string(),
     };
-    
+
     std::env::var(env_var).unwrap_or_else(|_| configured_key.to_string())
 }
 
@@ -131,7 +134,7 @@ pub fn detect_provider_from_env() -> Option<ProviderConfig> {
         ("Anthropic", "ANTHROPIC_API_KEY", "claude-3-sonnet-20240229"),
         ("Gemini", "GEMINI_API_KEY", "gemini-1.5-pro"),
     ];
-    
+
     for (provider_name, env_var, default_model) in providers {
         if let Ok(api_key) = std::env::var(env_var) {
             if !api_key.trim().is_empty() {
@@ -144,26 +147,28 @@ pub fn detect_provider_from_env() -> Option<ProviderConfig> {
             }
         }
     }
-    
+
     None
 }
 
 fn get_config_path() -> Result<PathBuf, io::Error> {
     let home = std::env::var("HOME")
         .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "HOME directory not found"))?;
-    
+
     // Check for settings.yaml first
-    let yaml_path = PathBuf::from(home.clone()).join(".ola").join("settings.yaml");
+    let yaml_path = PathBuf::from(home.clone())
+        .join(".ola")
+        .join("settings.yaml");
     if yaml_path.exists() {
         return Ok(yaml_path);
     }
-    
+
     // Backward compatibility: use config.json if it exists
     let json_path = PathBuf::from(home).join(".ola").join("config.json");
     if json_path.exists() {
         return Ok(json_path);
     }
-    
+
     // Default to YAML for new installs
     Ok(yaml_path)
 }
@@ -241,18 +246,16 @@ pub fn fetch_ollama_models() -> Result<Vec<String>, Box<dyn std::error::Error>> 
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
-    
-    let response = client
-        .get("http://localhost:11434/api/tags")
-        .send()?;
-    
+
+    let response = client.get("http://localhost:11434/api/tags").send()?;
+
     if !response.status().is_success() {
         return Err(format!("Ollama API error: {}", response.status()).into());
     }
-    
+
     let models_response: serde_json::Value = response.json()?;
     let mut model_names = Vec::new();
-    
+
     if let Some(models) = models_response["models"].as_array() {
         for model in models {
             if let Some(name) = model["name"].as_str() {
@@ -260,7 +263,7 @@ pub fn fetch_ollama_models() -> Result<Vec<String>, Box<dyn std::error::Error>> 
             }
         }
     }
-    
+
     Ok(model_names)
 }
 
@@ -306,7 +309,7 @@ pub fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
             if config.model.is_none() {
                 return Err("Gemini requires a model name".to_string());
             }
-            
+
             // Check if model is valid
             if let Some(model) = &config.model {
                 if !model.starts_with("gemini-") {
@@ -350,17 +353,24 @@ pub fn save() -> Result<(), std::io::Error> {
     }
 }
 
-pub fn test_provider_connection(provider_config: &ProviderConfig) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::api::{OpenAI, Anthropic, Ollama, Gemini, Provider};
+pub fn test_provider_connection(
+    provider_config: &ProviderConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::api::{Anthropic, Gemini, Ollama, OpenAI, Provider};
 
     // Validate the configuration first
     validate_provider_config(provider_config)?;
 
     // Get the model name (use a default if not specified)
-    let model = provider_config.model.as_ref().ok_or("Model name is required")?;
+    let model = provider_config
+        .model
+        .as_ref()
+        .ok_or("Model name is required")?;
 
     // Get base URL from additional settings if present
-    let base_url = provider_config.additional_settings.as_ref()
+    let base_url = provider_config
+        .additional_settings
+        .as_ref()
         .and_then(|settings| settings.get("base_url"))
         .and_then(|url| url.as_str());
 

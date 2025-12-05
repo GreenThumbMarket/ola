@@ -1,14 +1,14 @@
 #[macro_use]
 extern crate rocket;
 
-use rocket::State;
-use rocket::serde::{json::Json, Deserialize, Serialize};
+use ola_core::{api, config::ProviderConfig, Config};
 use rocket::fs::FileServer;
-use rocket_dyn_templates::{Template, context};
-use ola_core::{Config, api, config::ProviderConfig};
+use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket::State;
+use rocket_dyn_templates::{context, Template};
+use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::env;
 
 // Shared application state
 struct AppState {
@@ -25,8 +25,12 @@ fn get_api_key_from_env(provider: &str) -> Result<String, String> {
         _ => return Err(format!("Unknown provider: {}", provider)),
     };
 
-    env::var(env_var)
-        .map_err(|_| format!("Environment variable {} not found. Please set it in your .env file.", env_var))
+    env::var(env_var).map_err(|_| {
+        format!(
+            "Environment variable {} not found. Please set it in your .env file.",
+            env_var
+        )
+    })
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,16 +89,22 @@ struct ConnectionDetails {
 
 #[get("/")]
 fn index() -> Template {
-    Template::render("index", context! {
-        title: "Ola - AI Assistant"
-    })
+    Template::render(
+        "index",
+        context! {
+            title: "Ola - AI Assistant"
+        },
+    )
 }
 
 #[get("/configure")]
 fn configure_page() -> Template {
-    Template::render("configure", context! {
-        title: "Configure Ola"
-    })
+    Template::render(
+        "configure",
+        context! {
+            title: "Configure Ola"
+        },
+    )
 }
 
 #[post("/api/configure", data = "<config_req>")]
@@ -154,9 +164,7 @@ async fn api_configure(
 }
 
 #[post("/api/prompt", data = "<prompt_req>")]
-async fn api_prompt(
-    prompt_req: Json<PromptRequest>,
-) -> Json<PromptResponse> {
+async fn api_prompt(prompt_req: Json<PromptRequest>) -> Json<PromptResponse> {
     // Load fresh config
     let config = match Config::load() {
         Ok(cfg) => cfg,
@@ -181,7 +189,9 @@ async fn api_prompt(
     };
 
     // Get base URL if available
-    let base_url = provider_config.additional_settings.as_ref()
+    let base_url = provider_config
+        .additional_settings
+        .as_ref()
         .and_then(|settings| settings.get("base_url"))
         .and_then(|url| url.as_str());
 
@@ -208,9 +218,11 @@ async fn api_prompt(
         // Reconstruct API client in the blocking task
         let client = api::ApiClient::new(&provider_name, &api_key, base_url_opt.as_deref())
             .map_err(|e| e.to_string())?;
-        client.stream_prompt(&formatted_prompt_clone, &model_clone)
+        client
+            .stream_prompt(&formatted_prompt_clone, &model_clone)
             .map_err(|e| e.to_string())
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(Ok(response)) => Json(PromptResponse {
@@ -250,7 +262,9 @@ async fn api_test_connection(
     // Determine which provider to test
     let provider_config = if let Some(ref provider_name) = test_req.provider {
         // Test specific provider
-        let matching_provider = config.providers.iter()
+        let matching_provider = config
+            .providers
+            .iter()
             .find(|p| p.provider.eq_ignore_ascii_case(provider_name));
 
         match matching_provider {
@@ -280,7 +294,8 @@ async fn api_test_connection(
             None => {
                 return Json(TestConnectionResponse {
                     success: false,
-                    message: "No active provider configured. Please configure a provider first.".to_string(),
+                    message: "No active provider configured. Please configure a provider first."
+                        .to_string(),
                     details: None,
                 });
             }
@@ -289,46 +304,46 @@ async fn api_test_connection(
 
     let provider_config = provider_config.unwrap();
     let provider_name = provider_config.provider.clone();
-    let model_name = provider_config.model.clone().unwrap_or_else(|| "default".to_string());
+    let model_name = provider_config
+        .model
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
 
     // Test the connection in a blocking task
     let result = tokio::task::spawn_blocking(move || {
-        ola_core::config::test_provider_connection(&provider_config)
-            .map_err(|e| e.to_string())
-    }).await;
+        ola_core::config::test_provider_connection(&provider_config).map_err(|e| e.to_string())
+    })
+    .await;
 
     match result {
-        Ok(Ok(_)) => {
-            Json(TestConnectionResponse {
-                success: true,
-                message: format!("Successfully connected to {} with model {}", provider_name, model_name),
-                details: Some(ConnectionDetails {
-                    provider: provider_name,
-                    model: model_name,
-                    api_key_valid: true,
-                    endpoint_responding: true,
-                }),
-            })
-        }
-        Ok(Err(e)) => {
-            Json(TestConnectionResponse {
-                success: false,
-                message: format!("Connection test failed: {}", e),
-                details: Some(ConnectionDetails {
-                    provider: provider_name,
-                    model: model_name,
-                    api_key_valid: false,
-                    endpoint_responding: false,
-                }),
-            })
-        }
-        Err(e) => {
-            Json(TestConnectionResponse {
-                success: false,
-                message: format!("Task error: {}", e),
-                details: None,
-            })
-        }
+        Ok(Ok(_)) => Json(TestConnectionResponse {
+            success: true,
+            message: format!(
+                "Successfully connected to {} with model {}",
+                provider_name, model_name
+            ),
+            details: Some(ConnectionDetails {
+                provider: provider_name,
+                model: model_name,
+                api_key_valid: true,
+                endpoint_responding: true,
+            }),
+        }),
+        Ok(Err(e)) => Json(TestConnectionResponse {
+            success: false,
+            message: format!("Connection test failed: {}", e),
+            details: Some(ConnectionDetails {
+                provider: provider_name,
+                model: model_name,
+                api_key_valid: false,
+                endpoint_responding: false,
+            }),
+        }),
+        Err(e) => Json(TestConnectionResponse {
+            success: false,
+            message: format!("Task error: {}", e),
+            details: None,
+        }),
     }
 }
 
@@ -371,13 +386,15 @@ async fn api_models(_state: &State<AppState>) -> Json<Vec<String>> {
             ],
             "Ollama" => {
                 // Try to fetch Ollama models
-                ola_core::config::fetch_ollama_models().unwrap_or_else(|_| vec![
-                    "llama2".to_string(),
-                    "mistral".to_string(),
-                    "codellama".to_string(),
-                    "phi".to_string(),
-                ])
-            },
+                ola_core::config::fetch_ollama_models().unwrap_or_else(|_| {
+                    vec![
+                        "llama2".to_string(),
+                        "mistral".to_string(),
+                        "codellama".to_string(),
+                        "phi".to_string(),
+                    ]
+                })
+            }
             _ => vec![],
         },
         None => vec![],
@@ -403,7 +420,10 @@ fn rocket() -> _ {
     rocket::build()
         .manage(state)
         .mount("/", routes![index, configure_page])
-        .mount("/api", routes![api_configure, api_prompt, api_models, api_test_connection])
+        .mount(
+            "/api",
+            routes![api_configure, api_prompt, api_models, api_test_connection],
+        )
         .mount("/static", FileServer::from("ola-web/static"))
         .attach(Template::fairing())
 }

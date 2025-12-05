@@ -5,14 +5,17 @@ use predicates::prelude::*;
 fn test_cli_version() {
     // Test that the version flag works
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    cmd.arg("--version").assert().success().stdout(predicate::str::contains("0.2.0"));
+    cmd.arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0.2.0"));
 }
 
 #[test]
 fn test_cli_help() {
     // Test the main help output
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all subcommands are listed in the help output
     cmd.arg("--help")
         .assert()
@@ -30,7 +33,7 @@ fn test_cli_help() {
 fn test_no_args() {
     // Test running without arguments shows help message
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Should show message about no subcommand used
     cmd.assert()
         .success()
@@ -41,7 +44,7 @@ fn test_no_args() {
 fn test_prompt_help() {
     // Test help text for the prompt command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all flags are listed in the help output
     cmd.arg("prompt")
         .arg("--help")
@@ -61,7 +64,7 @@ fn test_prompt_help() {
 fn test_non_think_help() {
     // Test help text for the non-think command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all flags are listed in the help output
     cmd.arg("non-think")
         .arg("--help")
@@ -78,7 +81,7 @@ fn test_non_think_help() {
 fn test_configure_help() {
     // Test help text for the configure command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all flags are listed in the help output
     cmd.arg("configure")
         .arg("--help")
@@ -93,7 +96,7 @@ fn test_configure_help() {
 fn test_settings_help() {
     // Test help text for the settings command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all flags are listed in the help output
     cmd.arg("settings")
         .arg("--help")
@@ -111,7 +114,7 @@ fn test_settings_help() {
 fn test_models_help() {
     // Test help text for the models command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all flags are listed in the help output
     cmd.arg("models")
         .arg("--help")
@@ -125,7 +128,7 @@ fn test_models_help() {
 fn test_session_help() {
     // Test help text for the session command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Check that all flags are listed in the help output
     cmd.arg("session")
         .arg("--help")
@@ -142,7 +145,7 @@ fn test_session_help() {
 fn test_start_command() {
     // Test the basic start command
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Should show starting message
     cmd.arg("start")
         .assert()
@@ -154,7 +157,7 @@ fn test_start_command() {
 fn test_start_verbose() {
     // Test the start command with verbose flag
     let mut cmd = Command::cargo_bin("ola").unwrap();
-    
+
     // Should show verbose mode message
     cmd.arg("start")
         .arg("--verbose")
