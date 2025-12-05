@@ -60,6 +60,29 @@ struct ConfigResponse {
     message: String,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct TestConnectionRequest {
+    provider: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct TestConnectionResponse {
+    success: bool,
+    message: String,
+    details: Option<ConnectionDetails>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct ConnectionDetails {
+    provider: String,
+    model: String,
+    api_key_valid: bool,
+    endpoint_responding: bool,
+}
+
 #[get("/")]
 fn index() -> Template {
     Template::render("index", context! {
@@ -208,6 +231,107 @@ async fn api_prompt(
     }
 }
 
+#[post("/api/test-connection", data = "<test_req>")]
+async fn api_test_connection(
+    test_req: Json<TestConnectionRequest>,
+) -> Json<TestConnectionResponse> {
+    // Load configuration
+    let config = match Config::load() {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            return Json(TestConnectionResponse {
+                success: false,
+                message: "No configuration found. Please configure a provider first.".to_string(),
+                details: None,
+            });
+        }
+    };
+
+    // Determine which provider to test
+    let provider_config = if let Some(ref provider_name) = test_req.provider {
+        // Test specific provider
+        let matching_provider = config.providers.iter()
+            .find(|p| p.provider.eq_ignore_ascii_case(provider_name));
+
+        match matching_provider {
+            Some(p) => {
+                let mut cfg = p.clone();
+                // Apply environment variable fallback for API key
+                cfg.api_key = match cfg.provider.as_str() {
+                    "OpenAI" => std::env::var("OPENAI_API_KEY").unwrap_or(cfg.api_key),
+                    "Anthropic" => std::env::var("ANTHROPIC_API_KEY").unwrap_or(cfg.api_key),
+                    "Gemini" => std::env::var("GEMINI_API_KEY").unwrap_or(cfg.api_key),
+                    _ => cfg.api_key,
+                };
+                Some(cfg)
+            }
+            None => {
+                return Json(TestConnectionResponse {
+                    success: false,
+                    message: format!("Provider '{}' not found in configuration.", provider_name),
+                    details: None,
+                });
+            }
+        }
+    } else {
+        // Test active provider
+        match config.get_active_provider() {
+            Some(cfg) => Some(cfg),
+            None => {
+                return Json(TestConnectionResponse {
+                    success: false,
+                    message: "No active provider configured. Please configure a provider first.".to_string(),
+                    details: None,
+                });
+            }
+        }
+    };
+
+    let provider_config = provider_config.unwrap();
+    let provider_name = provider_config.provider.clone();
+    let model_name = provider_config.model.clone().unwrap_or_else(|| "default".to_string());
+
+    // Test the connection in a blocking task
+    let result = tokio::task::spawn_blocking(move || {
+        ola_core::config::test_provider_connection(&provider_config)
+            .map_err(|e| e.to_string())
+    }).await;
+
+    match result {
+        Ok(Ok(_)) => {
+            Json(TestConnectionResponse {
+                success: true,
+                message: format!("Successfully connected to {} with model {}", provider_name, model_name),
+                details: Some(ConnectionDetails {
+                    provider: provider_name,
+                    model: model_name,
+                    api_key_valid: true,
+                    endpoint_responding: true,
+                }),
+            })
+        }
+        Ok(Err(e)) => {
+            Json(TestConnectionResponse {
+                success: false,
+                message: format!("Connection test failed: {}", e),
+                details: Some(ConnectionDetails {
+                    provider: provider_name,
+                    model: model_name,
+                    api_key_valid: false,
+                    endpoint_responding: false,
+                }),
+            })
+        }
+        Err(e) => {
+            Json(TestConnectionResponse {
+                success: false,
+                message: format!("Task error: {}", e),
+                details: None,
+            })
+        }
+    }
+}
+
 #[get("/api/models")]
 async fn api_models(_state: &State<AppState>) -> Json<Vec<String>> {
     let config = Config::load().ok();
@@ -279,7 +403,7 @@ fn rocket() -> _ {
     rocket::build()
         .manage(state)
         .mount("/", routes![index, configure_page])
-        .mount("/api", routes![api_configure, api_prompt, api_models])
+        .mount("/api", routes![api_configure, api_prompt, api_models, api_test_connection])
         .mount("/static", FileServer::from("ola-web/static"))
         .attach(Template::fairing())
 }

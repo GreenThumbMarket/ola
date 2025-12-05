@@ -26,7 +26,7 @@ impl Provider for Anthropic {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minute timeout
             .build()?;
-        
+
         // Prepare the JSON payload for Anthropic API
         let payload = json!({
             "model": model,
@@ -39,9 +39,9 @@ impl Provider for Anthropic {
             "max_tokens": 2048,
             "stream": stream
         });
-        
+
         println!("Sending request to Anthropic...");
-        
+
         // Send a POST request to the Anthropic API endpoint
         let response = client
             .post(format!("{}/v1/messages", self.base_url))
@@ -50,24 +50,24 @@ impl Provider for Anthropic {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()?;
-        
+
         // Check if response is successful
         if !response.status().is_success() {
             return Err(format!("Anthropic API error: {}", response.status()).into());
         }
-        
+
         let mut full_response = String::new();
-        
+
         if stream {
             // Process the stream line by line
             let reader = std::io::BufReader::new(response);
-            
+
             for line in reader.lines() {
                 let line = line?;
                 if line.is_empty() || line == "data: [DONE]" {
                     continue;
                 }
-                
+
                 // Anthropic prefixes each line with "data: "
                 if let Some(json_str) = line.strip_prefix("data: ") {
                     // Parse JSON data
@@ -81,12 +81,12 @@ impl Provider for Anthropic {
                     }
                 }
             }
-            
+
             println!("\n"); // Add a newline at the end
         } else {
             // Handle non-streaming response
             let json_response: serde_json::Value = response.json()?;
-            
+
             // Handle the Anthropic response format which has content as an array
             if let Some(content_array) = json_response["content"].as_array() {
                 for item in content_array {
@@ -96,7 +96,52 @@ impl Provider for Anthropic {
                 }
             }
         }
-        
+
         Ok(full_response)
+    }
+
+    fn test_connection(&self, model: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Create a blocking client with a shorter timeout for testing
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(30)) // 30 second timeout for test
+            .build()?;
+
+        // Prepare a minimal test payload
+        let payload = json!({
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "test"
+                }
+            ],
+            "max_tokens": 5
+        });
+
+        // Send a POST request to the Anthropic API endpoint
+        let response = client
+            .post(format!("{}/v1/messages", self.base_url))
+            .header("X-API-Key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()?;
+
+        // Check if response is successful
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            return Err(format!("Anthropic API error: {} - {}", status, error_body).into());
+        }
+
+        // Parse the response to ensure it's valid
+        let json_response: serde_json::Value = response.json()?;
+
+        // Check if we got a valid response structure
+        if json_response["content"].is_null() {
+            return Err("Invalid response structure from Anthropic API".into());
+        }
+
+        Ok(())
     }
 }

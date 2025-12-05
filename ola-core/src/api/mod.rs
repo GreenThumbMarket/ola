@@ -15,6 +15,9 @@ pub use gemini::Gemini;
 // Trait for API providers
 pub trait Provider {
     fn send_prompt(&self, prompt: &str, model: &str, stream: bool) -> Result<String, Box<dyn std::error::Error>>;
+
+    // Test the provider connection with a minimal request
+    fn test_connection(&self, model: &str) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 // API client for handling communication with LLM providers

@@ -107,6 +107,9 @@ enum Commands {
         /// Optional: specify model name
         #[arg(short, long)]
         model: Option<String>,
+        /// Test the configured provider connection
+        #[arg(short, long)]
+        test: bool,
     },
     /// List available models for the configured provider
     Models {
@@ -368,7 +371,92 @@ fn main() {
             provider: cli_provider,
             api_key: cli_api_key,
             model: cli_model,
+            test,
         }) => {
+            // If --test flag is set, test the current configuration and exit
+            if *test {
+                utils::output::print_banner("🔌 Testing Provider Connection 🔌", utils::output::Color::BrightCyan);
+
+                let config_result = config::Config::load();
+                if let Err(e) = config_result {
+                    eprintln!("❌ Failed to load configuration: {}", e);
+                    eprintln!("Please run 'ola configure' first to set up a provider.");
+                    std::process::exit(1);
+                }
+
+                let config = config_result.unwrap();
+
+                // Determine which provider to test
+                let provider_config = if let Some(provider_name) = cli_provider {
+                    // User specified a provider to test
+                    let matching_provider = config.providers.iter()
+                        .find(|p| p.provider.eq_ignore_ascii_case(&provider_name));
+
+                    match matching_provider {
+                        Some(p) => {
+                            let mut cfg = p.clone();
+                            // Apply environment variable fallback for API key
+                            cfg.api_key = match cfg.provider.as_str() {
+                                "OpenAI" => std::env::var("OPENAI_API_KEY").unwrap_or(cfg.api_key),
+                                "Anthropic" => std::env::var("ANTHROPIC_API_KEY").unwrap_or(cfg.api_key),
+                                "Gemini" => std::env::var("GEMINI_API_KEY").unwrap_or(cfg.api_key),
+                                _ => cfg.api_key,
+                            };
+                            Some(cfg)
+                        }
+                        None => {
+                            eprintln!("❌ Provider '{}' not found in configuration.", provider_name);
+                            eprintln!("Available providers:");
+                            for p in &config.providers {
+                                eprintln!("  - {}", p.provider);
+                            }
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    // Test the active provider
+                    let provider_cfg = config.get_active_provider();
+                    if provider_cfg.is_none() {
+                        eprintln!("❌ No active provider configured.");
+                        eprintln!("Please run 'ola configure' first or specify --provider <name>.");
+                        std::process::exit(1);
+                    }
+                    provider_cfg
+                };
+
+                let provider_config = provider_config.unwrap();
+                println!("Testing connection to {} with model {}...",
+                    provider_config.provider,
+                    provider_config.model.as_ref().unwrap_or(&"default".to_string()));
+                println!("Making a real API call to verify configuration...\n");
+
+                match config::test_provider_connection(&provider_config) {
+                    Ok(_) => {
+                        utils::output::print_success(&format!(
+                            "✓ Provider {} is correctly configured and accessible!",
+                            provider_config.provider
+                        ));
+                        println!("  API Key: Valid");
+                        println!("  Model: {}", provider_config.model.as_ref().unwrap_or(&"default".to_string()));
+                        println!("  Endpoint: Responding correctly");
+                    }
+                    Err(e) => {
+                        utils::output::print_error(&format!(
+                            "✗ Provider connection test failed"
+                        ));
+                        eprintln!("\nError details: {}", e);
+                        eprintln!("\nTroubleshooting tips:");
+                        eprintln!("  1. Check that your API key is correct");
+                        eprintln!("  2. Verify the model name is valid for this provider");
+                        eprintln!("  3. Ensure you have network connectivity");
+                        eprintln!("  4. Check that the provider's API is operational");
+                        std::process::exit(1);
+                    }
+                }
+
+                return;
+            }
+
             // Interactive configuration mode with colorful banner
             utils::output::print_banner("🤖 Welcome to Ola Interactive Configuration! 🤖", utils::output::Color::DeepSkyBlue);
 

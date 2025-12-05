@@ -22,7 +22,7 @@ impl Provider for Ollama {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minute timeout
             .build()?;
-        
+
         // Prepare the JSON payload for Ollama API
         let payload = json!({
             "model": model,
@@ -32,34 +32,34 @@ impl Provider for Ollama {
                 "num_predict": 2048  // Limit token output
             }
         });
-        
+
         println!("Sending request to Ollama...");
-        
+
         // Send a POST request to the Ollama API endpoint
         let response = client
             .post(format!("{}/api/generate", self.base_url))
             .json(&payload)
             .send()?;
-        
+
         // Check if response is successful
         if !response.status().is_success() {
             return Err(format!("Ollama API error: {}", response.status()).into());
         }
-        
+
         let mut full_response = String::new();
-        
+
         // Process the stream line by line
         let reader = std::io::BufReader::new(response);
-        
+
         for line in reader.lines() {
             let line = line?;
             if line.is_empty() {
                 continue;
             }
-            
+
             // Parse each line as JSON
             let json_response: serde_json::Value = serde_json::from_str(&line)?;
-            
+
             // Extract the response text
             if let Some(text) = json_response["response"].as_str() {
                 if stream {
@@ -69,11 +69,55 @@ impl Provider for Ollama {
                 full_response.push_str(text);
             }
         }
-        
+
         if stream {
             println!("\n"); // Add a newline at the end
         }
-        
+
         Ok(full_response)
+    }
+
+    fn test_connection(&self, model: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Create a blocking client with a shorter timeout for testing
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(30)) // 30 second timeout for test
+            .build()?;
+
+        // First check if Ollama server is running
+        match client.get(format!("{}/api/version", self.base_url)).send() {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    return Err(format!("Ollama server returned error: {}", response.status()).into());
+                }
+            }
+            Err(_) => {
+                return Err(format!("Cannot connect to Ollama server at {}. Is Ollama running?", self.base_url).into());
+            }
+        }
+
+        // Prepare a minimal test payload
+        let payload = json!({
+            "model": model,
+            "prompt": "test",
+            "stream": false,
+            "options": {
+                "num_predict": 5
+            }
+        });
+
+        // Send a POST request to the Ollama API endpoint
+        let response = client
+            .post(format!("{}/api/generate", self.base_url))
+            .json(&payload)
+            .send()?;
+
+        // Check if response is successful
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            return Err(format!("Ollama API error: {} - {}", status, error_body).into());
+        }
+
+        Ok(())
     }
 }

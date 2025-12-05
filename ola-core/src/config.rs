@@ -349,3 +349,41 @@ pub fn save() -> Result<(), std::io::Error> {
         Err(e) => Err(e),
     }
 }
+
+pub fn test_provider_connection(provider_config: &ProviderConfig) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::api::{OpenAI, Anthropic, Ollama, Gemini, Provider};
+
+    // Validate the configuration first
+    validate_provider_config(provider_config)?;
+
+    // Get the model name (use a default if not specified)
+    let model = provider_config.model.as_ref().ok_or("Model name is required")?;
+
+    // Get base URL from additional settings if present
+    let base_url = provider_config.additional_settings.as_ref()
+        .and_then(|settings| settings.get("base_url"))
+        .and_then(|url| url.as_str());
+
+    // Create the provider and test the connection
+    match provider_config.provider.as_str() {
+        "OpenAI" => {
+            let provider = OpenAI::new(&provider_config.api_key, base_url);
+            provider.test_connection(model)?;
+        }
+        "Anthropic" => {
+            let provider = Anthropic::new(&provider_config.api_key, base_url);
+            provider.test_connection(model)?;
+        }
+        "Gemini" => {
+            let provider = Gemini::new(&provider_config.api_key, base_url);
+            provider.test_connection(model)?;
+        }
+        "Ollama" => {
+            let provider = Ollama::new(base_url);
+            provider.test_connection(model)?;
+        }
+        _ => return Err(format!("Unsupported provider: {}", provider_config.provider).into()),
+    }
+
+    Ok(())
+}

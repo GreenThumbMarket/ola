@@ -93,4 +93,56 @@ impl Provider for Gemini {
         
         Ok(full_response)
     }
+
+    fn test_connection(&self, model: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Create a blocking client with a shorter timeout for testing
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(30)) // 30 second timeout for test
+            .build()?;
+
+        // Create the API endpoint with model and API key
+        let api_url = format!("{}/v1beta/models/{}:generateContent?key={}",
+            self.base_url, model, self.api_key);
+
+        // Prepare a minimal test payload
+        let payload = json!({
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": "test"
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "maxOutputTokens": 5
+            }
+        });
+
+        // Send a POST request to the Gemini API endpoint
+        let response = client
+            .post(api_url)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()?;
+
+        // Check if response is successful
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            return Err(format!("Gemini API error: {} - {}", status, error_body).into());
+        }
+
+        // Parse the response to ensure it's valid
+        let json_response: serde_json::Value = response.json()?;
+
+        // Check if we got a valid response structure
+        if json_response["candidates"].is_null() {
+            return Err("Invalid response structure from Gemini API".into());
+        }
+
+        Ok(())
+    }
 }

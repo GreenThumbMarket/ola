@@ -76,4 +76,48 @@ impl Provider for Ollama {
         
         Ok(full_response)
     }
+
+    fn test_connection(&self, model: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Create a blocking client with a shorter timeout for testing
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(30)) // 30 second timeout for test
+            .build()?;
+
+        // First check if Ollama server is running
+        match client.get(format!("{}/api/version", self.base_url)).send() {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    return Err(format!("Ollama server returned error: {}", response.status()).into());
+                }
+            }
+            Err(_) => {
+                return Err(format!("Cannot connect to Ollama server at {}. Is Ollama running?", self.base_url).into());
+            }
+        }
+
+        // Prepare a minimal test payload
+        let payload = json!({
+            "model": model,
+            "prompt": "test",
+            "stream": false,
+            "options": {
+                "num_predict": 5
+            }
+        });
+
+        // Send a POST request to the Ollama API endpoint
+        let response = client
+            .post(format!("{}/api/generate", self.base_url))
+            .json(&payload)
+            .send()?;
+
+        // Check if response is successful
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            return Err(format!("Ollama API error: {} - {}", status, error_body).into());
+        }
+
+        Ok(())
+    }
 }

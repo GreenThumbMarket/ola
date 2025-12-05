@@ -115,6 +115,9 @@ enum Commands {
         /// Optional: specify model name
         #[arg(short, long)]
         model: Option<String>,
+        /// Test the configured provider connection
+        #[arg(short, long)]
+        test: bool,
     },
     /// List available models for the configured provider
     Models {
@@ -376,7 +379,55 @@ fn main() {
             provider: cli_provider,
             api_key: cli_api_key,
             model: cli_model,
+            test,
         }) => {
+            // If --test flag is set, test the current configuration and exit
+            if *test {
+                utils::output::print_banner("🔌 Testing Provider Connection 🔌", utils::output::Color::BrightCyan);
+
+                let config = match config::Config::load() {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        eprintln!("❌ Failed to load configuration: {}", e);
+                        eprintln!("Please run 'ola configure' first to set up a provider.");
+                        std::process::exit(1);
+                    }
+                };
+
+                let provider_config = match config.get_active_provider() {
+                    Some(cfg) => cfg,
+                    None => {
+                        eprintln!("❌ No active provider configured.");
+                        eprintln!("Please run 'ola configure' first to set up a provider.");
+                        std::process::exit(1);
+                    }
+                };
+
+                println!("Testing connection to {} with model {}...",
+                    provider_config.provider,
+                    provider_config.model.as_ref().unwrap_or(&"default".to_string()));
+
+                match config::test_provider_connection(&provider_config) {
+                    Ok(_) => {
+                        utils::output::print_success(&format!(
+                            "Provider {} is correctly configured and accessible!",
+                            provider_config.provider
+                        ));
+                        println!("Model: {}", provider_config.model.as_ref().unwrap_or(&"default".to_string()));
+                    }
+                    Err(e) => {
+                        utils::output::print_error(&format!(
+                            "Provider connection test failed: {}",
+                            e
+                        ));
+                        std::process::exit(1);
+                    }
+                }
+
+                return;
+            }
+
+
             // Interactive configuration mode with colorful banner
             utils::output::print_banner("🤖 Welcome to Ola Interactive Configuration! 🤖", utils::output::Color::DeepSkyBlue);
 
