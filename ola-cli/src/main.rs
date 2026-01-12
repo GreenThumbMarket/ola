@@ -18,6 +18,9 @@ use ola_core::{config, models, project, prompt, settings, utils};
 
 // CLI-specific modules
 mod console_utils;
+mod wave_ui;
+
+use wave_ui::WaveUI;
 
 #[derive(Parser)]
 #[command(name = "ola")]
@@ -419,6 +422,12 @@ enum ProjectCommands {
 
 fn main() {
     let cli = OlaCli::parse();
+    let wave_ui = WaveUI::new();
+
+    // Show banner for interactive commands (not for piped output)
+    if !cli.quiet && !cli.pipe && cli.command.is_none() {
+        wave_ui.show_banner();
+    }
 
     // If no subcommand is provided, use the default prompt behavior
     match &cli.command {
@@ -437,13 +446,12 @@ fn main() {
             );
         }
         Some(Commands::Start { verbose }) => {
-            utils::output::startup_animation();
-            utils::output::print_success("Application started successfully!");
+            let wave_ui = WaveUI::new();
+            wave_ui.show_banner();
+            wave_ui.pulse_wave(2);
+            wave_ui.show_success("Ola started successfully!");
             if *verbose {
-                utils::output::println_colored(
-                    "Running in verbose mode!",
-                    utils::output::Color::BrightYellow,
-                );
+                wave_ui.show_info("Running in verbose mode");
             }
             // Add custom logic here
         }

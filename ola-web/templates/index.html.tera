@@ -55,7 +55,9 @@
 
     <div class="loading" id="loading">
         <div class="spinner"></div>
-        <p style="margin-top: 10px;">Processing your prompt...</p>
+        <p style="margin-top: 10px; color: #06b6d4; font-weight: 500;">
+            <span id="loadingText">AI is thinking</span><span class="dots"></span>
+        </p>
     </div>
 
     <div id="response" style="display: none; margin-top: 30px;">
@@ -72,6 +74,22 @@
     </div>
 </div>
 {% endblock content %}
+
+{% block extra_styles %}
+<style>
+    .dots::after {
+        content: '';
+        animation: dots 1.5s steps(4, end) infinite;
+    }
+
+    @keyframes dots {
+        0%, 20% { content: ''; }
+        40% { content: '.'; }
+        60% { content: '..'; }
+        80%, 100% { content: '...'; }
+    }
+</style>
+{% endblock extra_styles %}
 
 {% block extra_scripts %}
 <script>

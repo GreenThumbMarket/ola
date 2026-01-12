@@ -8,14 +8,15 @@ pub mod vectordb;
 pub mod chroma;
 pub mod query;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub use document::{Document, DocumentLoader};
 pub use embeddings::{EmbeddingModel, EmbeddingProvider};
 pub use vectorstore::VectorStore;
-pub use vectordb::{VectorDB, VectorDBConfig, SearchResult, create_vector_db};
+pub use vectordb::{VectorDB, VectorDBConfig, create_vector_db};
+pub use vectordb::SearchResult as VectorDBSearchResult;
 pub use query::{RagQuery, QueryResult};
 
 /// Configuration for RAG system
@@ -148,10 +149,18 @@ impl RagSystem {
             .collect::<Vec<_>>()
             .join("\n\n");
 
+        // Convert VectorDB SearchResults to the format expected by QueryResult
+        let retrieved_docs = search_results.iter().map(|r| {
+            vectorstore::SearchResult {
+                document: r.document.clone(),
+                score: r.score,
+            }
+        }).collect();
+
         Ok(QueryResult {
             query: query_text.to_string(),
             context,
-            retrieved_documents: search_results,
+            retrieved_documents: retrieved_docs,
         })
     }
 

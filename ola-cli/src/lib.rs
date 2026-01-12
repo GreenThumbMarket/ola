@@ -5,3 +5,4 @@ pub use ola_core::*;
 
 // CLI-specific modules
 pub mod console_utils;
+pub mod wave_ui;
