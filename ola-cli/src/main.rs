@@ -194,6 +194,102 @@ enum Commands {
         #[arg(long, default_value = "3000")]
         duration: u64,
     },
+    /// RAG (Retrieval-Augmented Generation) operations
+    Rag {
+        #[command(subcommand)]
+        command: RagCommands,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum RagCommands {
+    /// Index a document (automatically detects PDF or text files)
+    Index {
+        /// Path to the file (PDF, TXT, MD, or any text file)
+        #[arg(short, long)]
+        file: String,
+        /// Use ChromaDB instead of in-memory store
+        #[arg(short = 'c', long)]
+        use_chroma: bool,
+        /// ChromaDB host (if using ChromaDB)
+        #[arg(long, default_value = "localhost")]
+        chroma_host: String,
+        /// ChromaDB port (if using ChromaDB)
+        #[arg(long, default_value = "8000")]
+        chroma_port: u16,
+        /// ChromaDB collection name
+        #[arg(long, default_value = "ola_documents")]
+        collection: String,
+    },
+    /// Query the RAG system
+    Query {
+        /// The query text
+        #[arg(short = 'q', long)]
+        query: String,
+        /// Generate a full response (not just retrieve documents)
+        #[arg(short = 'g', long)]
+        generate: bool,
+        /// Use ChromaDB instead of in-memory store
+        #[arg(short = 'c', long)]
+        use_chroma: bool,
+        /// ChromaDB host (if using ChromaDB)
+        #[arg(long, default_value = "localhost")]
+        chroma_host: String,
+        /// ChromaDB port (if using ChromaDB)
+        #[arg(long, default_value = "8000")]
+        chroma_port: u16,
+        /// ChromaDB collection name
+        #[arg(long, default_value = "ola_documents")]
+        collection: String,
+    },
+    /// List all indexed documents
+    List {
+        /// Use ChromaDB instead of in-memory store
+        #[arg(short = 'c', long)]
+        use_chroma: bool,
+        /// ChromaDB host (if using ChromaDB)
+        #[arg(long, default_value = "localhost")]
+        chroma_host: String,
+        /// ChromaDB port (if using ChromaDB)
+        #[arg(long, default_value = "8000")]
+        chroma_port: u16,
+        /// ChromaDB collection name
+        #[arg(long, default_value = "ola_documents")]
+        collection: String,
+    },
+    /// Get statistics about the RAG index
+    Stats {
+        /// Use ChromaDB instead of in-memory store
+        #[arg(short = 'c', long)]
+        use_chroma: bool,
+        /// ChromaDB host (if using ChromaDB)
+        #[arg(long, default_value = "localhost")]
+        chroma_host: String,
+        /// ChromaDB port (if using ChromaDB)
+        #[arg(long, default_value = "8000")]
+        chroma_port: u16,
+        /// ChromaDB collection name
+        #[arg(long, default_value = "ola_documents")]
+        collection: String,
+    },
+    /// Clear all indexed documents
+    Clear {
+        /// Force clear without confirmation
+        #[arg(short, long)]
+        force: bool,
+        /// Use ChromaDB instead of in-memory store
+        #[arg(short = 'c', long)]
+        use_chroma: bool,
+        /// ChromaDB host (if using ChromaDB)
+        #[arg(long, default_value = "localhost")]
+        chroma_host: String,
+        /// ChromaDB port (if using ChromaDB)
+        #[arg(long, default_value = "8000")]
+        chroma_port: u16,
+        /// ChromaDB collection name
+        #[arg(long, default_value = "ola_documents")]
+        collection: String,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -413,6 +509,9 @@ fn main() {
             duration,
         }) => {
             handle_console_command(*demo, loading.clone(), *duration);
+        }
+        Some(Commands::Rag { command }) => {
+            handle_rag_command(command);
         }
         Some(Commands::Configure {
             provider: cli_provider,
@@ -2456,6 +2555,280 @@ fn handle_project_command(command: &ProjectCommands) {
                 }
                 Err(e) => {
                     eprintln!("Failed to run prompt with project: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
+/// Handle RAG command operations
+fn handle_rag_command(command: &RagCommands) {
+    use ola_core::rag::{RagConfig, RagSystem, VectorDBConfig};
+    use std::path::Path;
+
+    // Create runtime for async operations
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    // Helper function to create VectorDB config based on flags
+    let create_vector_db_config = |use_chroma: bool, host: &str, port: u16, collection: &str| -> VectorDBConfig {
+        if use_chroma {
+            VectorDBConfig::ChromaDB {
+                host: host.to_string(),
+                port,
+                collection_name: collection.to_string(),
+                persist_directory: Some(format!(".ola/chroma/{}", collection)),
+            }
+        } else {
+            VectorDBConfig::InMemory {
+                storage_path: std::env::var("HOME")
+                    .map(|h| format!("{}/.ola/rag", h))
+                    .unwrap_or_else(|_| ".ola/rag".to_string()),
+            }
+        }
+    };
+
+    match command {
+        RagCommands::Index { file, use_chroma, chroma_host, chroma_port, collection } => {
+            let path = Path::new(file);
+            if !path.exists() {
+                eprintln!("File not found: {}", file);
+                std::process::exit(1);
+            }
+
+            // Create config with appropriate vector DB
+            let config = RagConfig {
+                vector_db: create_vector_db_config(*use_chroma, chroma_host, *chroma_port, collection),
+                ..RagConfig::default()
+            };
+
+            // Initialize RAG system
+            let mut rag_system = runtime.block_on(async {
+                match RagSystem::new(config).await {
+                    Ok(system) => system,
+                    Err(e) => {
+                        eprintln!("Failed to initialize RAG system: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            });
+
+            let file_type = path.extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("text");
+
+            utils::output::print_spinner_frame(0, &format!("Indexing {} file: {}", file_type.to_uppercase(), file));
+
+            let result = runtime.block_on(async {
+                rag_system.index_file(path).await
+            });
+
+            match result {
+                Ok(msg) => {
+                    utils::output::clear_line();
+                    utils::output::print_success(&msg);
+                    if *use_chroma {
+                        println!("  📦 Using ChromaDB at {}:{}", chroma_host, chroma_port);
+                    }
+                }
+                Err(e) => {
+                    utils::output::clear_line();
+                    eprintln!("Failed to index file: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        RagCommands::Query { query, generate, use_chroma, chroma_host, chroma_port, collection } => {
+            // Create config with appropriate vector DB
+            let config = RagConfig {
+                vector_db: create_vector_db_config(*use_chroma, chroma_host, *chroma_port, collection),
+                ..RagConfig::default()
+            };
+
+            // Initialize RAG system
+            let rag_system = runtime.block_on(async {
+                match RagSystem::new(config).await {
+                    Ok(system) => system,
+                    Err(e) => {
+                        eprintln!("Failed to initialize RAG system: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            });
+
+            utils::output::print_spinner_frame(0, "Searching documents...");
+
+            let result = runtime.block_on(async {
+                rag_system.query(query).await
+            });
+
+            match result {
+                Ok(query_result) => {
+                    utils::output::clear_line();
+
+                    if query_result.retrieved_documents.is_empty() {
+                        utils::output::print_error("No relevant documents found.");
+                    } else {
+                        println!("\n{}", query_result.get_sources_summary());
+
+                        if *generate {
+                            utils::output::print_spinner_frame(0, "Generating response...");
+
+                            let response = runtime.block_on(async {
+                                query_result.generate_response().await
+                            });
+
+                            match response {
+                                Ok(text) => {
+                                    utils::output::clear_line();
+                                    utils::output::print_banner(
+                                        "📚 RAG Response 📚",
+                                        utils::output::Color::BrightCyan,
+                                    );
+                                    println!("\n{}\n", text);
+                                }
+                                Err(e) => {
+                                    utils::output::clear_line();
+                                    eprintln!("Failed to generate response: {}", e);
+                                    std::process::exit(1);
+                                }
+                            }
+                        } else {
+                            println!("\nContext retrieved:");
+                            println!("{}", query_result.context);
+                        }
+                    }
+                }
+                Err(e) => {
+                    utils::output::clear_line();
+                    eprintln!("Failed to query RAG system: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        RagCommands::List { use_chroma, chroma_host, chroma_port, collection } => {
+            // Create config with appropriate vector DB
+            let config = RagConfig {
+                vector_db: create_vector_db_config(*use_chroma, chroma_host, *chroma_port, collection),
+                ..RagConfig::default()
+            };
+
+            // Initialize RAG system
+            let rag_system = runtime.block_on(async {
+                match RagSystem::new(config).await {
+                    Ok(system) => system,
+                    Err(e) => {
+                        eprintln!("Failed to initialize RAG system: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            });
+
+            let result = runtime.block_on(async {
+                rag_system.list_documents().await
+            });
+
+            match result {
+                Ok(docs) => {
+                    if docs.is_empty() {
+                        println!("No documents indexed.");
+                    } else {
+                        println!("Indexed documents ({}):", docs.len());
+                        for doc_id in docs {
+                            println!("  - {}", doc_id);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to list documents: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        RagCommands::Stats { use_chroma, chroma_host, chroma_port, collection } => {
+            // Create config with appropriate vector DB
+            let config = RagConfig {
+                vector_db: create_vector_db_config(*use_chroma, chroma_host, *chroma_port, collection),
+                ..RagConfig::default()
+            };
+
+            // Initialize RAG system
+            let rag_system = runtime.block_on(async {
+                match RagSystem::new(config).await {
+                    Ok(system) => system,
+                    Err(e) => {
+                        eprintln!("Failed to initialize RAG system: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            });
+
+            let result = runtime.block_on(async {
+                rag_system.get_stats().await
+            });
+
+            match result {
+                Ok(stats) => {
+                    utils::output::print_banner(
+                        "📊 RAG System Statistics 📊",
+                        utils::output::Color::BrightGreen,
+                    );
+                    println!("Total documents: {}", stats.total_documents);
+                    println!("Index size: {} bytes", stats.index_size_bytes);
+                    println!("Embedding model: {}", stats.embedding_model);
+                    println!("Vector DB type: {}", stats.vector_db_type);
+                }
+                Err(e) => {
+                    eprintln!("Failed to get statistics: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        RagCommands::Clear { force, use_chroma, chroma_host, chroma_port, collection } => {
+            if !force {
+                let confirm = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Are you sure you want to clear all indexed documents?")
+                    .default(false)
+                    .interact()
+                    .unwrap();
+
+                if !confirm {
+                    println!("Clear operation cancelled.");
+                    return;
+                }
+            }
+
+            // Create config with appropriate vector DB
+            let config = RagConfig {
+                vector_db: create_vector_db_config(*use_chroma, chroma_host, *chroma_port, collection),
+                ..RagConfig::default()
+            };
+
+            // Initialize RAG system
+            let mut rag_system = runtime.block_on(async {
+                match RagSystem::new(config).await {
+                    Ok(system) => system,
+                    Err(e) => {
+                        eprintln!("Failed to initialize RAG system: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            });
+
+            let result = runtime.block_on(async {
+                rag_system.clear_index().await
+            });
+
+            match result {
+                Ok(_) => {
+                    utils::output::print_success("All indexed documents have been cleared.");
+                }
+                Err(e) => {
+                    eprintln!("Failed to clear index: {}", e);
                     std::process::exit(1);
                 }
             }
