@@ -1,0 +1,20 @@
+[default]
+address = "127.0.0.1"
+port = 8000
+workers = 4
+log_level = "normal"
+template_dir = "ola-web/templates"
+
+[default.limits]
+forms = "64 kB"
+json = "1 MiB"
+
+[debug]
+address = "127.0.0.1"
+port = 8000
+template_dir = "ola-web/templates"
+
+[release]
+address = "0.0.0.0"
+port = 8000
+template_dir = "ola-web/templates"

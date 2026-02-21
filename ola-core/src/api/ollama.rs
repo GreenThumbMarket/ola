@@ -17,7 +17,12 @@ impl Ollama {
 }
 
 impl Provider for Ollama {
-    fn send_prompt(&self, prompt: &str, model: &str, stream: bool) -> Result<String, Box<dyn std::error::Error>> {
+    fn send_prompt(
+        &self,
+        prompt: &str,
+        model: &str,
+        stream: bool,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         // Create a blocking client with timeout configuration
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minute timeout
@@ -87,11 +92,17 @@ impl Provider for Ollama {
         match client.get(format!("{}/api/version", self.base_url)).send() {
             Ok(response) => {
                 if !response.status().is_success() {
-                    return Err(format!("Ollama server returned error: {}", response.status()).into());
+                    return Err(
+                        format!("Ollama server returned error: {}", response.status()).into(),
+                    );
                 }
             }
             Err(_) => {
-                return Err(format!("Cannot connect to Ollama server at {}. Is Ollama running?", self.base_url).into());
+                return Err(format!(
+                    "Cannot connect to Ollama server at {}. Is Ollama running?",
+                    self.base_url
+                )
+                .into());
             }
         }
 
@@ -114,7 +125,9 @@ impl Provider for Ollama {
         // Check if response is successful
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            let error_body = response
+                .text()
+                .unwrap_or_else(|_| "Unable to read error body".to_string());
             return Err(format!("Ollama API error: {} - {}", status, error_body).into());
         }
 

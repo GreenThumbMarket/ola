@@ -1,0 +1,146 @@
+{% extends "base" %}
+
+{% block content %}
+<div class="card">
+    <h2 style="margin-bottom: 20px;">Configure LLM Provider</h2>
+
+    <div id="alert" style="display: none;"></div>
+
+    <form id="configForm">
+        <div style="margin-bottom: 20px;">
+            <label for="provider">Provider</label>
+            <select id="provider" name="provider" required>
+                <option value="">Select a provider...</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="ollama">Ollama (Local)</option>
+            </select>
+            <small style="color: #666; display: block; margin-top: 5px;">
+                API keys are configured via environment variables on the server (.env file)
+            </small>
+        </div>
+
+        <div id="modelField" style="margin-bottom: 20px; display: none;">
+            <label for="model">Model</label>
+            <select id="model" name="model" required>
+                <option value="">Select a model...</option>
+            </select>
+        </div>
+
+        <button type="submit" id="submitBtn">Save Configuration</button>
+    </form>
+</div>
+{% endblock content %}
+
+{% block extra_scripts %}
+<script>
+    const providerSelect = document.getElementById('provider');
+    const modelField = document.getElementById('modelField');
+    const modelSelect = document.getElementById('model');
+    const form = document.getElementById('configForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const alert = document.getElementById('alert');
+
+    const models = {
+        openai: [
+            'gpt-5.1',
+            'gpt-5',
+            'gpt-5-mini',
+            'gpt-5-nano',
+            'gpt-5-codex',
+            'gpt-4.1',
+            'gpt-4.1-mini',
+            'gpt-4.1-nano',
+            'o3',
+            'o3-pro',
+            'o4-mini'
+        ],
+        anthropic: [
+            'claude-opus-4-5-20251124',
+            'claude-haiku-4-5-20251015',
+            'claude-opus-4-1-20250805',
+            'claude-sonnet-4-20250522',
+            'claude-3-opus-20240229',
+            'claude-3-sonnet-20240229',
+            'claude-3-haiku-20240307'
+        ],
+        gemini: [
+            'gemini-3-pro',
+            'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-flash-image',
+            'gemini-2.0-flash',
+            'gemini-1.5-pro',
+            'gemini-1.5-flash'
+        ],
+        ollama: [
+            'llama2',
+            'mistral',
+            'codellama',
+            'phi'
+        ]
+    };
+
+    providerSelect.addEventListener('change', (e) => {
+        const provider = e.target.value;
+
+        if (provider) {
+            // Populate model dropdown
+            modelField.style.display = 'block';
+            modelSelect.innerHTML = '<option value="">Select a model...</option>';
+            models[provider].forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+        } else {
+            modelField.style.display = 'none';
+        }
+    });
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        submitBtn.disabled = true;
+        alert.style.display = 'none';
+
+        const formData = {
+            provider: providerSelect.value,
+            model: modelSelect.value,
+        };
+
+        try {
+            const response = await fetch('/api/configure', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
+            });
+
+            const data = await response.json();
+            submitBtn.disabled = false;
+
+            if (data.success) {
+                showAlert(data.message, 'success');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
+            } else {
+                showAlert(data.message, 'error');
+            }
+        } catch (error) {
+            submitBtn.disabled = false;
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    });
+
+    function showAlert(message, type) {
+        alert.className = `alert alert-${type}`;
+        alert.textContent = message;
+        alert.style.display = 'block';
+    }
+</script>
+{% endblock extra_scripts %}

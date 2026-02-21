@@ -13,7 +13,7 @@ pub struct OpenAI {
 impl OpenAI {
     pub fn new(api_key: &str, base_url: Option<&str>) -> Self {
         let url = base_url.unwrap_or("https://api.openai.com").to_string();
-        Self { 
+        Self {
             api_key: api_key.to_string(),
             base_url: url,
         }
@@ -21,7 +21,12 @@ impl OpenAI {
 }
 
 impl Provider for OpenAI {
-    fn send_prompt(&self, prompt: &str, model: &str, stream: bool) -> Result<String, Box<dyn std::error::Error>> {
+    fn send_prompt(
+        &self,
+        prompt: &str,
+        model: &str,
+        stream: bool,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         // Create a blocking client with timeout configuration
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minute timeout
@@ -71,7 +76,9 @@ impl Provider for OpenAI {
                     // Parse JSON data
                     if let Ok(json_response) = serde_json::from_str::<serde_json::Value>(json_str) {
                         // Extract content from the response
-                        if let Some(content) = json_response["choices"][0]["delta"]["content"].as_str() {
+                        if let Some(content) =
+                            json_response["choices"][0]["delta"]["content"].as_str()
+                        {
                             print!("{}", content);
                             std::io::stdout().flush()?;
                             full_response.push_str(content);
@@ -101,8 +108,10 @@ impl Provider for OpenAI {
 
         // Prepare a minimal test payload
         // Use max_completion_tokens for newer models (gpt-5, o1, etc.) and max_tokens for older ones
-        let is_newer_model = model.starts_with("gpt-5") || model.starts_with("o1") ||
-                            model.starts_with("o3") || model.starts_with("o4");
+        let is_newer_model = model.starts_with("gpt-5")
+            || model.starts_with("o1")
+            || model.starts_with("o3")
+            || model.starts_with("o4");
 
         let mut payload = json!({
             "model": model,
@@ -131,7 +140,9 @@ impl Provider for OpenAI {
         // Check if response is successful
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            let error_body = response
+                .text()
+                .unwrap_or_else(|_| "Unable to read error body".to_string());
             return Err(format!("OpenAI API error: {} - {}", status, error_body).into());
         }
 

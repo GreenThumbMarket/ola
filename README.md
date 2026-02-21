@@ -4,12 +4,33 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Background
-Ola is a Rust-based CLI for effectively prompting reasoning models. It helps structure your interactions with LLMs using best practices for prompting.
+Ola is a Rust-based tool for effectively prompting reasoning models. It helps structure your interactions with LLMs using best practices for prompting, available as both a CLI and Web UI.
+
+## Project Structure
+
+This is a Cargo workspace containing three crates:
+
+- **ola-core**: Shared library with core functionality (API clients, config, prompting logic)
+- **ola-cli**: Command-line interface
+- **ola-web**: Web UI built with Rocket framework
 
 ## Install
+
+### CLI
 ```bash
-cargo install --path .
+cargo install --path ola-cli
 ```
+
+### Web UI
+```bash
+# Run the web server
+cargo run -p ola-web
+
+# Or navigate to ola-web and run
+cd ola-web && cargo run
+```
+
+The web UI will be available at `http://localhost:8000`.
 
 ## Dependencies
 - `rust`

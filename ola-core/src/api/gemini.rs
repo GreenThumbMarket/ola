@@ -11,8 +11,10 @@ pub struct Gemini {
 
 impl Gemini {
     pub fn new(api_key: &str, base_url: Option<&str>) -> Self {
-        let url = base_url.unwrap_or("https://generativelanguage.googleapis.com").to_string();
-        Self { 
+        let url = base_url
+            .unwrap_or("https://generativelanguage.googleapis.com")
+            .to_string();
+        Self {
             api_key: api_key.to_string(),
             base_url: url,
         }
@@ -20,15 +22,22 @@ impl Gemini {
 }
 
 impl Provider for Gemini {
-    fn send_prompt(&self, prompt: &str, model: &str, stream: bool) -> Result<String, Box<dyn std::error::Error>> {
+    fn send_prompt(
+        &self,
+        prompt: &str,
+        model: &str,
+        stream: bool,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         // Create a blocking client with timeout configuration
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minute timeout
             .build()?;
 
         // Create the API endpoint with model and API key
-        let api_url = format!("{}/v1beta/models/{}:generateContent?key={}",
-            self.base_url, model, self.api_key);
+        let api_url = format!(
+            "{}/v1beta/models/{}:generateContent?key={}",
+            self.base_url, model, self.api_key
+        );
 
         // Prepare the JSON payload for Gemini API
         let payload = json!({
@@ -101,8 +110,10 @@ impl Provider for Gemini {
             .build()?;
 
         // Create the API endpoint with model and API key
-        let api_url = format!("{}/v1beta/models/{}:generateContent?key={}",
-            self.base_url, model, self.api_key);
+        let api_url = format!(
+            "{}/v1beta/models/{}:generateContent?key={}",
+            self.base_url, model, self.api_key
+        );
 
         // Prepare a minimal test payload
         let payload = json!({
@@ -131,7 +142,9 @@ impl Provider for Gemini {
         // Check if response is successful
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().unwrap_or_else(|_| "Unable to read error body".to_string());
+            let error_body = response
+                .text()
+                .unwrap_or_else(|_| "Unable to read error body".to_string());
             return Err(format!("Gemini API error: {} - {}", status, error_body).into());
         }
 
