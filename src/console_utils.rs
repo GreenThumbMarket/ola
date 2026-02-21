@@ -1,7 +1,7 @@
+use anyhow::Result;
+use console::Term;
 use std::thread;
 use std::time::Duration;
-use console::Term;
-use anyhow::Result;
 
 pub struct ConsoleUtils {
     term: Term,
@@ -85,11 +85,11 @@ impl Default for ConsoleUtils {
 /// Example function demonstrating the console features
 pub fn demo_console_features() -> Result<()> {
     let console = ConsoleUtils::new();
-    
+
     console.write_line("Hello World!")?;
     thread::sleep(Duration::from_millis(2000));
     console.clear_line()?;
-    
+
     Ok(())
 }
 
@@ -99,15 +99,15 @@ pub fn loading_animation(message: &str, duration_ms: u64) -> Result<()> {
     let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let frame_duration = 100;
     let total_frames = duration_ms / frame_duration;
-    
+
     console.hide_cursor()?;
-    
+
     for i in 0..total_frames {
         let frame = frames[(i as usize) % frames.len()];
         console.write(&format!("\r{} {}", frame, message))?;
         thread::sleep(Duration::from_millis(frame_duration));
     }
-    
+
     console.clear_line()?;
     console.show_cursor()?;
     Ok(())

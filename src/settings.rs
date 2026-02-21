@@ -9,15 +9,15 @@ pub struct Settings {
     /// Default model to use when not specified
     #[serde(default = "default_model")]
     pub default_model: String,
-    
+
     /// Default prompt template customization
     #[serde(default)]
     pub prompt_template: PromptTemplate,
-    
+
     /// Defaults for command flags
     #[serde(default)]
     pub defaults: DefaultSettings,
-    
+
     /// Behavior customization settings
     #[serde(default)]
     pub behavior: BehaviorSettings,
@@ -29,11 +29,11 @@ pub struct PromptTemplate {
     /// Text to display before the goals section
     #[serde(default = "default_goals_prefix")]
     pub goals_prefix: String,
-    
+
     /// Text to display before the return format section
     #[serde(default = "default_return_format_prefix")]
     pub return_format_prefix: String,
-    
+
     /// Text to display before the warnings section
     #[serde(default = "default_warnings_prefix")]
     pub warnings_prefix: String,
@@ -45,15 +45,15 @@ pub struct DefaultSettings {
     /// Default return format when not specified
     #[serde(default = "default_return_format")]
     pub return_format: String,
-    
+
     /// Default to quiet mode
     #[serde(default)]
     pub quiet: bool,
-    
+
     /// Default to no-thinking mode
     #[serde(default)]
     pub no_thinking: bool,
-    
+
     /// Default to copying results to clipboard
     #[serde(default)]
     pub clipboard: bool,
@@ -65,11 +65,11 @@ pub struct BehaviorSettings {
     /// Log file location for session outputs
     #[serde(default = "default_log_file")]
     pub log_file: String,
-    
+
     /// Enable or disable session logging
     #[serde(default = "default_enable_logging")]
     pub enable_logging: bool,
-    
+
     /// Thinking animation customization
     #[serde(default)]
     pub thinking_animation: ThinkingAnimation,
@@ -81,7 +81,7 @@ pub struct ThinkingAnimation {
     /// Emoji sequence to use for the thinking animation
     #[serde(default = "default_thinking_emojis")]
     pub emojis: Vec<String>,
-    
+
     /// Text to display with the thinking animation
     #[serde(default = "default_thinking_text")]
     pub text: String,
@@ -117,7 +117,12 @@ fn default_enable_logging() -> bool {
 }
 
 fn default_thinking_emojis() -> Vec<String> {
-    vec!["🌊".to_string(), "🏄".to_string(), "🌊".to_string(), "🏄‍♀️".to_string()]
+    vec![
+        "🌊".to_string(),
+        "🏄".to_string(),
+        "🌊".to_string(),
+        "🏄‍♀️".to_string(),
+    ]
 }
 
 fn default_thinking_text() -> String {
@@ -178,6 +183,6 @@ impl Default for Settings {
 fn get_settings_path() -> Result<PathBuf, io::Error> {
     let home = std::env::var("HOME")
         .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "HOME directory not found"))?;
-    
+
     Ok(PathBuf::from(home).join(".ola").join("settings.yaml"))
 }
