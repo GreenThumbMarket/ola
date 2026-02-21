@@ -19,6 +19,7 @@ use ola_core::{config, models, project, prompt, settings, utils};
 // CLI-specific modules
 mod console_utils;
 mod wave_ui;
+mod tui;
 
 use wave_ui::WaveUI;
 
@@ -201,6 +202,12 @@ enum Commands {
     Rag {
         #[command(subcommand)]
         command: RagCommands,
+    },
+    /// Launch the Terminal User Interface (TUI) mode
+    Tui {
+        /// Start with a specific provider
+        #[arg(short, long)]
+        provider: Option<String>,
     },
 }
 
@@ -520,6 +527,28 @@ fn main() {
         }
         Some(Commands::Rag { command }) => {
             handle_rag_command(command);
+        }
+        Some(Commands::Tui { provider }) => {
+            // Handle provider configuration if specified
+            if let Some(ref provider_name) = provider {
+                // Try to set the active provider
+                if let Ok(mut config) = config::Config::load() {
+                    for p in &config.providers {
+                        if p.provider.eq_ignore_ascii_case(provider_name) {
+                            config.active_provider = p.provider.clone();
+                            let _ = config.save();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Launch the TUI
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+            if let Err(e) = rt.block_on(tui::run()) {
+                eprintln!("TUI Error: {}", e);
+                std::process::exit(1);
+            }
         }
         Some(Commands::Configure {
             provider: cli_provider,
