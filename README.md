@@ -74,6 +74,19 @@ ola prompt -g "Your prompt here" -r 3
 
 The `-r` flag accepts a number between 1-10, indicating the number of recursive waves to execute. Each wave is tracked with a unique color identifier.
 
+### Ralph Loop (Core Engine)
+Ralph Loop is now the default prompt engine in Ola. Every `ola prompt` run uses iterative self-refinement with short-term memory between passes.
+
+```bash
+# Run prompt with default Ralph passes
+ola prompt -g "Design an API migration plan"
+
+# Control Ralph pass count (1-10)
+ola prompt -g "Design an API migration plan" --iterations 5
+```
+
+By default, Ola runs **3 Ralph passes**. Use `--iterations` to change pass count. Each pass critiques and improves the previous pass output, which gives Ola stronger memory and more agentic refinement behavior.
+
 ### Project Management
 Ola now supports project-based workflows with file attachments, multiple goals, and shared contexts:
 
