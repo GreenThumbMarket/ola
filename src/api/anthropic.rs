@@ -13,7 +13,7 @@ pub struct Anthropic {
 impl Anthropic {
     pub fn new(api_key: &str, base_url: Option<&str>) -> Self {
         let url = base_url.unwrap_or("https://api.anthropic.com").to_string();
-        Self { 
+        Self {
             api_key: api_key.to_string(),
             base_url: url,
         }
@@ -21,12 +21,17 @@ impl Anthropic {
 }
 
 impl Provider for Anthropic {
-    fn send_prompt(&self, prompt: &str, model: &str, stream: bool) -> Result<String, Box<dyn std::error::Error>> {
+    fn send_prompt(
+        &self,
+        prompt: &str,
+        model: &str,
+        stream: bool,
+    ) -> Result<String, Box<dyn std::error::Error>> {
         // Create a blocking client with timeout configuration
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(120)) // 2 minute timeout
             .build()?;
-        
+
         // Prepare the JSON payload for Anthropic API
         let payload = json!({
             "model": model,
@@ -39,9 +44,9 @@ impl Provider for Anthropic {
             "max_tokens": 2048,
             "stream": stream
         });
-        
+
         println!("Sending request to Anthropic...");
-        
+
         // Send a POST request to the Anthropic API endpoint
         let response = client
             .post(format!("{}/v1/messages", self.base_url))
@@ -50,24 +55,24 @@ impl Provider for Anthropic {
             .header("Content-Type", "application/json")
             .json(&payload)
             .send()?;
-        
+
         // Check if response is successful
         if !response.status().is_success() {
             return Err(format!("Anthropic API error: {}", response.status()).into());
         }
-        
+
         let mut full_response = String::new();
-        
+
         if stream {
             // Process the stream line by line
             let reader = std::io::BufReader::new(response);
-            
+
             for line in reader.lines() {
                 let line = line?;
                 if line.is_empty() || line == "data: [DONE]" {
                     continue;
                 }
-                
+
                 // Anthropic prefixes each line with "data: "
                 if let Some(json_str) = line.strip_prefix("data: ") {
                     // Parse JSON data
@@ -81,12 +86,12 @@ impl Provider for Anthropic {
                     }
                 }
             }
-            
+
             println!("\n"); // Add a newline at the end
         } else {
             // Handle non-streaming response
             let json_response: serde_json::Value = response.json()?;
-            
+
             // Handle the Anthropic response format which has content as an array
             if let Some(content_array) = json_response["content"].as_array() {
                 for item in content_array {
@@ -96,7 +101,7 @@ impl Provider for Anthropic {
                 }
             }
         }
-        
+
         Ok(full_response)
     }
 }

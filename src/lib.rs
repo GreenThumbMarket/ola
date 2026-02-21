@@ -3,10 +3,10 @@
 
 // Core modules
 pub mod config;
-pub mod prompt;
-pub mod settings;
 pub mod models;
 pub mod project;
+pub mod prompt;
+pub mod settings;
 
 // API communication layer
 pub mod api;
@@ -15,8 +15,8 @@ pub mod api;
 pub mod utils;
 
 // Re-export the main components
-pub use config::{Config, ProviderConfig};
-pub use settings::Settings;
 pub use api::ApiClient;
-pub use models::{Project, ProjectFile, Goal, Context};
+pub use config::{Config, ProviderConfig};
+pub use models::{Context, Goal, Project, ProjectFile};
 pub use project::ProjectManager;
+pub use settings::Settings;

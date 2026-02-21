@@ -49,6 +49,9 @@ Settings are stored in `~/.ola/settings.yaml` and include options for:
 # List available models
 ola models
 
+# Launch the interactive terminal dashboard
+ola tui
+
 # Run a non-thinking prompt
 ola non-think -p "Your prompt here"
 
